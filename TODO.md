@@ -41,5 +41,8 @@ Prioritized backlog for what comes after v0.1.
 
 ## Infra
 
-- Purchase `gocurb.dev`, point DNS at GitHub Pages, enforce HTTPS/TLS on the
-  documentation site.
+- ~~Purchase `gocurb.dev`, point DNS at GitHub Pages.~~ Done.
+- Enable **Enforce HTTPS** in Repo → Settings → Pages once the `www.gocurb.dev`
+  cert finishes provisioning (Let's Encrypt SAN cert covering apex + www).
+  Note: `.dev` is on the browser HSTS preload list so HTTPS is already forced
+  client-side; this just makes the server-side headers explicit.

@@ -49,3 +49,41 @@ func TestRun_RejectsUnparseableURL(t *testing.T) {
 		t.Errorf("expected parse error, got nil")
 	}
 }
+
+func TestRun_FollowsHTTPSRedirect(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, srv.URL+"/dest", http.StatusFound)
+			return
+		}
+		io.WriteString(w, "after-redirect")
+	}))
+	defer srv.Close()
+
+	client := srv.Client()
+	client.CheckRedirect = checkRedirect
+
+	var buf bytes.Buffer
+	if err := run(client, &buf, srv.URL+"/start"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := buf.String(); got != "after-redirect" {
+		t.Errorf("body = %q, want %q", got, "after-redirect")
+	}
+}
+
+func TestRun_RejectsHTTPRedirect(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://example.invalid/blocked", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	client := srv.Client()
+	client.CheckRedirect = checkRedirect
+
+	err := run(client, io.Discard, srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "non-https") {
+		t.Errorf("expected non-https refusal, got %v", err)
+	}
+}

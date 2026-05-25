@@ -14,15 +14,26 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: curb <https-url>")
 		os.Exit(2)
 	}
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-		},
-	}
-	if err := run(client, os.Stdout, os.Args[1]); err != nil {
+	if err := run(newClient(), os.Stdout, os.Args[1]); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(1)
 	}
+}
+
+func newClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		},
+		CheckRedirect: checkRedirect,
+	}
+}
+
+var checkRedirect = func(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" {
+		return fmt.Errorf("redirect to non-https URL refused: %s", req.URL.String())
+	}
+	return nil
 }
 
 func run(client *http.Client, out io.Writer, raw string) error {

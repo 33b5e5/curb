@@ -23,7 +23,7 @@ protocol breadth or feature surface.
 ## Install
 
 ```sh
-go install gocurb.dev@latest
+go install gocurb.dev/curb@latest
 ```
 
 ## License
