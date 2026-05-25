@@ -41,6 +41,14 @@ See [`TODO.md`](TODO.md) for the prioritized roadmap.
 - Prefer `flag` (stdlib) once we need more than one CLI argument; raw `os.Args`
   for v0.1 since there's exactly one.
 
+## `docs/` (GitHub Pages)
+
+`docs/index.html` serves two purposes from one file: a minimal human landing
+page at `https://gocurb.dev/`, and the Go vanity-import resolver via the
+`<meta name="go-import">` tag — that tag is what makes
+`go install gocurb.dev@latest` find the GitHub repo. Don't remove it.
+`docs/CNAME` is GitHub Pages' custom-domain marker.
+
 ## Source of truth
 
 This file and [`TODO.md`](TODO.md) are the source of truth for project direction.
