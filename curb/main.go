@@ -124,7 +124,7 @@ func validatePinFlags(pin, noPin bool, forced mode) error {
 // buildSieves assembles the Mode A sieve chain. Order matters: cheaper checks
 // run first so we don't hash an empty body, etc.
 func buildSieves(cfg config) ([]Sieve, error) {
-	sieves := []Sieve{nonemptySieve{}}
+	sieves := []Sieve{nonemptySieve{}, heuristicSieve{}}
 	if cfg.noPin {
 		return sieves, nil
 	}

@@ -3,13 +3,10 @@
 Prioritized backlog for what comes after v0.1.
 **P0** = next iteration. **P1** = soon. **P2** = eventually.
 
-> **Next up:** Heuristic sieve (P1).
+> **Next up:** Mode A block UX (P1).
 
 ## P1 — making Mode A real
 
-- **Heuristic sieve.** Pattern checks for `sudo` without context, `rm -rf /`,
-  nested `curl|wget … | bash`, suspicious `base64 -d | sh`. Honest framing in
-  the output: this is a smell test, not a guarantee.
 - **Mode A block UX.** When a sieve blocks, the stderr report ends with concrete
   next steps: `curb --inspect URL` (preview the script) and `curb --force URL`
   (override).
