@@ -49,6 +49,25 @@ page at `https://gocurb.dev/`, and the Go vanity-import resolver via the
 `go install gocurb.dev@latest` find the GitHub repo. Don't remove it.
 `docs/CNAME` is GitHub Pages' custom-domain marker.
 
+## Site posture (`gocurb.dev` on GitHub Pages)
+
+GH Pages does not let you set custom response headers on custom domains. The
+"Enforce HTTPS" toggle adds an HTTP→HTTPS 301 but does *not* send
+`Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`,
+or `X-Content-Type-Options`. Mozilla Observatory rates the site C/50 as a
+result; SSL Labs rates it A.
+
+This is cosmetic for our actual risk model. The landing page is one static
+HTML file with no JavaScript, no forms, no user input, no third-party
+resources, no interactivity. CSP/XFO/XCTO protect against attacks that have
+no vector here. HSTS at the browser level is already provided by the `.dev`
+TLD preload list.
+
+Don't suggest "fixes" (Cloudflare proxy, moving host) unless the site grows
+features that create real attack surface — forms, JS, third-party embeds,
+user-generated content. Until then the grade is a checklist artifact, not a
+real risk.
+
 ## Source of truth
 
 This file and [`TODO.md`](TODO.md) are the source of truth for project direction.

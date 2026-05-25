@@ -29,8 +29,6 @@ Prioritized backlog for what comes after v0.1.
 - **Mode A block UX.** When a sieve blocks, the stderr report ends with concrete
   next steps: `curb --inspect URL` (preview the script) and `curb --force URL`
   (override).
-- **Redirect handling.** Follow 3xx by default. Hard-fail any chain that crosses
-  into `http://`.
 
 ## P2 — broader request surface
 
@@ -42,7 +40,7 @@ Prioritized backlog for what comes after v0.1.
 ## Infra
 
 - ~~Purchase `gocurb.dev`, point DNS at GitHub Pages.~~ Done.
-- Enable **Enforce HTTPS** in Repo → Settings → Pages once the `www.gocurb.dev`
-  cert finishes provisioning (Let's Encrypt SAN cert covering apex + www).
-  Note: `.dev` is on the browser HSTS preload list so HTTPS is already forced
-  client-side; this just makes the server-side headers explicit.
+- ~~Let's Encrypt SAN cert covering apex + `www`.~~ Done.
+- ~~Enable **Enforce HTTPS** in Repo → Settings → Pages.~~ Done.
+- **Site security headers (low priority).** Observatory C/50 (CSP, XFO, XCTO
+  missing). Cosmetic for our static page; see CLAUDE.md → *Site posture*.
