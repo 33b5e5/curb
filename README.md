@@ -12,11 +12,13 @@ scripting and operations work. It targets a narrow problem space:
 
 ## Modes
 
-curb dispatches on `Content-Type` (with a magic-byte sniff fallback). A flag can force each mode:
+There are currently 3 supported modes; curb automatically picks based on `Content-Type` or by sniffing the first few bytes.
+
+The mode can be forced via the following flags:
 
 - **`--inspect`** — stream textual payloads (JSON, HTML, XML, …) to stdout.
-- **`--download`** — save binaries to disk; streams to stdout on a pipe. `-o PATH` always wins.
-- **`--script`** — pipe-guard: buffer the body, run it through sieves, emit only on pass.
+- **`--download`** — save binaries to disk; streams to stdout on a pipe. `-o PATH` takes precedence.
+- **`--script`** — pipe-guard: buffer the body, run it through security sieves, emit only on pass.
 
 ## Sieves
 
