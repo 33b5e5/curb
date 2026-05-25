@@ -2,8 +2,6 @@
 
 A modern, HTTPS-only transport utility written in Go, using only the standard library.
 
-curb is in early development; the behavior and interface are still evolving.
-
 ## What curb is
 
 A small, focused tool for the common `curl`/`wget` workflows used in modern shell
@@ -11,6 +9,22 @@ scripting and operations work. It targets a narrow problem space:
 
 - **HTTPS only.** No other protocols, no plaintext fallback.
 - **Zero runtime dependencies.** Pure Go standard library.
+
+## Modes
+
+curb dispatches on `Content-Type` (with a magic-byte sniff fallback). A flag can force each mode:
+
+- **`--inspect`** — stream textual payloads (JSON, HTML, XML, …) to stdout.
+- **`--download`** — save binaries to disk; streams to stdout on a pipe. `-o PATH` always wins.
+- **`--script`** — pipe-guard: buffer the body, run it through sieves, emit only on pass.
+
+## Sieves
+
+`--script` runs the body through a chain of checks before any bytes reach a shell:
+
+- **`nonempty`** — refuses empty bodies (e.g. HTTP 204) that would otherwise pipe silently.
+- **`heuristic`** — pattern smell-tests (`rm -rf /`, fetch-pipe-shell, base64-pipe-shell, `sudo sh -c`). Friction layer, not a guarantee.
+- **`tofu`** — trust-on-first-use SHA-256 pinning, persisted at `~/.config/curb/known.txt`. `--pin` to accept a change, `--no-pin` to skip, `--force` to override any sieve once.
 
 ## What curb is not
 
