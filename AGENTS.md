@@ -73,3 +73,12 @@ real risk.
 This file and [`TODO.md`](TODO.md) are the source of truth for project direction.
 During early iteration, avoid over-polishing user-facing messaging (README copy,
 slogans, positioning) — those will evolve as the design firms up.
+
+## Claude
+
+In a new repo you might want to add a symlink like:
+
+`ln -s AGENTS.md CLAUDE.md`
+
+We used AGENTS.md to be agnostic as to the tool used, but CLAUDE.md if present 
+is not tracked in Git.

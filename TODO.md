@@ -3,20 +3,16 @@
 Prioritized backlog for what comes after v0.1.
 **P0** = next iteration. **P1** = soon. **P2** = eventually.
 
-> **Next up:** Mode C (binary download).
+> **Next up:** `Sieve` interface and harness.
 
 ## P0 — beyond v0.1
 
-- **Mode dispatch skeleton.** Detect `Content-Type` and fall back to magic-byte
-  sniffing when the header is missing or `application/octet-stream`. Introduce an
-  internal `mode` enum (B is today's default). Add `--script`, `--inspect`,
-  `--download` flags to force a mode.
-- **Mode C: binary download.** Default behavior with no `-o`:
-  - stdout is a TTY → save to CWD, filename from URL path or `Content-Disposition`,
-    refuse to clobber an existing file.
-  - stdout is piped/redirected → stream to stdout (so `curb URL | tar xz` works).
-  - `-o PATH` always wins.
-  - Progress metrics on stderr.
+- ~~**Mode dispatch skeleton.**~~ Done. Internal `mode` enum, `Content-Type` →
+  `http.DetectContentType` sniff fallback, `--inspect`/`--download`/`--script`
+  force flags.
+- ~~**Mode C: binary download.**~~ Done. `-o` overwrites; piped stdout streams;
+  TTY auto-saves to CWD with filename from `Content-Disposition` or URL path,
+  refusing to clobber. Summary metrics on stderr.
 - **`Sieve` interface and harness.** Define the Go interface (name, evaluate, verdict).
   Wire it into the Mode A code path even if only a trivial stub sieve ships first.
 
