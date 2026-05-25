@@ -30,6 +30,7 @@ type config struct {
 	// Mode A (--script) options.
 	forcePin bool
 	noPin    bool
+	force    bool
 	tofuPath string // override pin-file location; tests set this to a tempdir
 }
 
@@ -41,6 +42,7 @@ func main() {
 		forceScript   bool
 		forcePin      bool
 		noPin         bool
+		force         bool
 	)
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
 	flag.BoolVar(&forceInspect, "inspect", false, "force inspection mode (stream to stdout)")
@@ -48,6 +50,7 @@ func main() {
 	flag.BoolVar(&forceScript, "script", false, "force pipe-guard mode")
 	flag.BoolVar(&forcePin, "pin", false, "record current script hash (overrides TOFU mismatch)")
 	flag.BoolVar(&noPin, "no-pin", false, "skip the TOFU sieve for this invocation")
+	flag.BoolVar(&force, "force", false, "bypass sieve blocks (still warns on stderr)")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
 		flag.PrintDefaults()
@@ -64,7 +67,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
-	if err := validatePinFlags(forcePin, noPin, forced); err != nil {
+	if err := validateScriptFlags(forcePin, noPin, force, forced); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
@@ -77,6 +80,7 @@ func main() {
 		stdoutIsTTY: isTerminal(os.Stdout),
 		forcePin:    forcePin,
 		noPin:       noPin,
+		force:       force,
 	}
 	if err := run(newClient(), cfg, flag.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
@@ -111,12 +115,12 @@ func selectMode(inspect, download, script, hasOut bool) (mode, error) {
 	return pick, nil
 }
 
-func validatePinFlags(pin, noPin bool, forced mode) error {
+func validateScriptFlags(pin, noPin, force bool, forced mode) error {
 	if pin && noPin {
 		return errors.New("--pin and --no-pin are mutually exclusive")
 	}
-	if (pin || noPin) && forced != modeScript {
-		return errors.New("--pin and --no-pin require --script")
+	if (pin || noPin || force) && forced != modeScript {
+		return errors.New("--pin, --no-pin, and --force require --script")
 	}
 	return nil
 }
@@ -192,7 +196,8 @@ func run(client *http.Client, cfg config, raw string) error {
 		if err != nil {
 			return err
 		}
-		return script(body, u, sieves, cfg)
+		meta := SieveMeta{URL: u, Status: resp.StatusCode, Header: resp.Header}
+		return script(body, meta, sieves, cfg)
 	default:
 		return fmt.Errorf("internal: unknown mode %d", m)
 	}

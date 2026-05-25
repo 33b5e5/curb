@@ -273,6 +273,35 @@ func TestRun_ScriptModeBlocksEmpty(t *testing.T) {
 	}
 }
 
+func TestRun_ScriptModeForcePipesDespiteBlock(t *testing.T) {
+	body := "rm -rf /\n"
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	cfg := config{
+		forcedMode: modeScript,
+		stdout:     &stdout,
+		stderr:     &stderr,
+		noPin:      true,
+		force:      true,
+	}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("expected pass with --force, got %v", err)
+	}
+	if stdout.String() != body {
+		t.Errorf("stdout = %q, want %q", stdout.String(), body)
+	}
+	if !strings.Contains(stderr.String(), "--force in effect") {
+		t.Errorf("expected --force warning on stderr, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "rm-rf-root") {
+		t.Errorf("expected heuristic hit reported in warning, got %q", stderr.String())
+	}
+}
+
 func TestRun_SniffsWhenContentTypeMissing(t *testing.T) {
 	// PNG magic bytes; server doesn't set Content-Type (but Go's auto-sniff will
 	// fill it in for the response). Force the empty CT path by overriding to

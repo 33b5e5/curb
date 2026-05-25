@@ -52,9 +52,14 @@ func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 	case pinned == cur:
 		return Verdict{}
 	default:
+		hint := "if the change is expected, accept the new hash with --pin"
+		if meta.URL != nil {
+			hint = fmt.Sprintf("if expected: curb --pin --script %s", meta.URL)
+		}
 		return Verdict{
 			Block:  true,
 			Reason: fmt.Sprintf("script body changed (pinned %s, got %s)", pinned[:12], cur[:12]),
+			Hint:   hint,
 		}
 	}
 }

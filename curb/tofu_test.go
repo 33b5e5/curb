@@ -73,6 +73,9 @@ func TestTofuSieve_MismatchBlocks(t *testing.T) {
 	if !strings.Contains(v.Reason, "changed") {
 		t.Errorf("reason = %q, want it to mention 'changed'", v.Reason)
 	}
+	if !strings.Contains(v.Hint, "--pin") || !strings.Contains(v.Hint, u.String()) {
+		t.Errorf("hint should suggest --pin with the URL, got %q", v.Hint)
+	}
 }
 
 func TestTofuSieve_ForcePinOverridesMismatch(t *testing.T) {
@@ -172,23 +175,27 @@ func TestLoadPin_AbsentFileNoError(t *testing.T) {
 	}
 }
 
-func TestValidatePinFlags(t *testing.T) {
+func TestValidateScriptFlags(t *testing.T) {
 	cases := []struct {
 		name    string
 		pin     bool
 		noPin   bool
+		force   bool
 		forced  mode
 		wantErr bool
 	}{
-		{"neither", false, false, modeAuto, false},
-		{"pin with script", true, false, modeScript, false},
-		{"no-pin with script", false, true, modeScript, false},
-		{"both flags", true, true, modeScript, true},
-		{"pin without script", true, false, modeAuto, true},
-		{"no-pin without script", false, true, modeInspect, true},
+		{"neither", false, false, false, modeAuto, false},
+		{"pin with script", true, false, false, modeScript, false},
+		{"no-pin with script", false, true, false, modeScript, false},
+		{"force with script", false, false, true, modeScript, false},
+		{"all three (force+pin)", true, false, true, modeScript, false},
+		{"pin+no-pin conflict", true, true, false, modeScript, true},
+		{"pin without script", true, false, false, modeAuto, true},
+		{"no-pin without script", false, true, false, modeInspect, true},
+		{"force without script", false, false, true, modeAuto, true},
 	}
 	for _, c := range cases {
-		err := validatePinFlags(c.pin, c.noPin, c.forced)
+		err := validateScriptFlags(c.pin, c.noPin, c.force, c.forced)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%s: err=%v wantErr=%v", c.name, err, c.wantErr)
 		}

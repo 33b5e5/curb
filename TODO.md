@@ -3,20 +3,7 @@
 Prioritized backlog for what comes after v0.1.
 **P0** = next iteration. **P1** = soon. **P2** = eventually.
 
-> **Next up:** Mode A block UX (P1).
-
-## P1 — making Mode A real
-
-- **Mode A block UX.** When a sieve blocks, the stderr report ends with concrete
-  next steps: `curb --inspect URL` (preview the script) and `curb --force URL`
-  (override).
-- **Per-`Verdict` next-step hints.** Each `Verdict` carries its own remedy so
-  the block report can suggest the right action per sieve (TOFU drift →
-  `--inspect` / `--force`; heuristic → `--inspect`; nonempty → check the URL).
-  Today's harness suggests no hint at all, which is honest but not actionable.
-- **Widen `SieveMeta`.** Pass HTTP status and useful response headers so sieves
-  can produce diagnostic reasons (e.g. nonempty saying "HTTP 204 No Content"
-  instead of just "body is empty").
+> **Next up:** custom request headers (P2).
 
 ## P2 — broader request surface
 

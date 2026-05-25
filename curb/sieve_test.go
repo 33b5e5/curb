@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -10,14 +11,14 @@ import (
 
 type passSieve struct{}
 
-func (passSieve) Name() string                          { return "pass" }
-func (passSieve) Evaluate([]byte, SieveMeta) Verdict    { return Verdict{} }
+func (passSieve) Name() string                       { return "pass" }
+func (passSieve) Evaluate([]byte, SieveMeta) Verdict { return Verdict{} }
 
-type blockSieve struct{ name, reason string }
+type blockSieve struct{ name, reason, hint string }
 
 func (b blockSieve) Name() string { return b.name }
 func (b blockSieve) Evaluate([]byte, SieveMeta) Verdict {
-	return Verdict{Block: true, Reason: b.reason}
+	return Verdict{Block: true, Reason: b.reason, Hint: b.hint}
 }
 
 type sawMetaSieve struct{ seen SieveMeta }
@@ -26,6 +27,11 @@ func (s *sawMetaSieve) Name() string { return "saw-meta" }
 func (s *sawMetaSieve) Evaluate(_ []byte, m SieveMeta) Verdict {
 	s.seen = m
 	return Verdict{}
+}
+
+func metaFor(rawurl string) SieveMeta {
+	u, _ := url.Parse(rawurl)
+	return SieveMeta{URL: u}
 }
 
 func TestNonemptySieve(t *testing.T) {
@@ -41,11 +47,24 @@ func TestNonemptySieve(t *testing.T) {
 	}
 }
 
+func TestNonemptySieve_MentionsHTTPStatus(t *testing.T) {
+	v := nonemptySieve{}.Evaluate(nil, SieveMeta{Status: http.StatusNoContent})
+	if !v.Block {
+		t.Fatal("expected block")
+	}
+	if !strings.Contains(v.Reason, "204") {
+		t.Errorf("reason should mention HTTP 204, got %q", v.Reason)
+	}
+	if !strings.Contains(v.Hint, "204") {
+		t.Errorf("hint should explain 204, got %q", v.Hint)
+	}
+}
+
 func TestScript_PassesWhenAllSievesPass(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	u, _ := url.Parse("https://example.com/s")
-	err := script(strings.NewReader("echo hello"), u, []Sieve{passSieve{}}, cfg)
+	err := script(strings.NewReader("echo hello"), metaFor("https://example.com/s"),
+		[]Sieve{passSieve{}}, cfg)
 	if err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
@@ -57,8 +76,7 @@ func TestScript_PassesWhenAllSievesPass(t *testing.T) {
 func TestScript_BlocksAndWithholdsPayload(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	u, _ := url.Parse("https://example.com/s")
-	err := script(strings.NewReader("echo hello"), u,
+	err := script(strings.NewReader("echo hello"), metaFor("https://example.com/s"),
 		[]Sieve{blockSieve{name: "test", reason: "nope"}}, cfg)
 	if err == nil {
 		t.Fatal("expected block error")
@@ -74,8 +92,7 @@ func TestScript_BlocksAndWithholdsPayload(t *testing.T) {
 func TestScript_CollectsAllBlocks(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	u, _ := url.Parse("https://example.com/s")
-	err := script(strings.NewReader("x"), u, []Sieve{
+	err := script(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
 		blockSieve{name: "a", reason: "r1"},
 		blockSieve{name: "b", reason: "r2"},
 	}, cfg)
@@ -92,8 +109,7 @@ func TestScript_CollectsAllBlocks(t *testing.T) {
 func TestScript_OneBlockAmongPasses(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	u, _ := url.Parse("https://example.com/s")
-	err := script(strings.NewReader("x"), u, []Sieve{
+	err := script(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
 		passSieve{},
 		blockSieve{name: "bad", reason: "stop"},
 		passSieve{},
@@ -106,14 +122,66 @@ func TestScript_OneBlockAmongPasses(t *testing.T) {
 	}
 }
 
-func TestScript_PassesURLToSieves(t *testing.T) {
+func TestScript_PassesMetaToSieves(t *testing.T) {
 	saw := &sawMetaSieve{}
 	cfg := config{stdout: io.Discard, stderr: io.Discard}
 	u, _ := url.Parse("https://example.com/install.sh")
-	if err := script(strings.NewReader("x"), u, []Sieve{saw}, cfg); err != nil {
+	meta := SieveMeta{URL: u, Status: 200, Header: http.Header{"X-Test": {"yes"}}}
+	if err := script(strings.NewReader("x"), meta, []Sieve{saw}, cfg); err != nil {
 		t.Fatalf("script: %v", err)
 	}
 	if saw.seen.URL != u {
-		t.Errorf("sieve didn't receive URL: got %v, want %v", saw.seen.URL, u)
+		t.Errorf("URL not propagated: got %v, want %v", saw.seen.URL, u)
+	}
+	if saw.seen.Status != 200 {
+		t.Errorf("Status not propagated: got %d", saw.seen.Status)
+	}
+	if saw.seen.Header.Get("X-Test") != "yes" {
+		t.Errorf("Header not propagated: %v", saw.seen.Header)
+	}
+}
+
+func TestScript_BlockReportIncludesHintsAndFooter(t *testing.T) {
+	cfg := config{stdout: io.Discard, stderr: io.Discard}
+	err := script(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
+		blockSieve{name: "test", reason: "boom", hint: "do the thing"},
+	}, cfg)
+	if err == nil {
+		t.Fatal("expected block")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"test: boom",
+		"→ do the thing",
+		"next steps:",
+		"curb --inspect https://example.com/s",
+		"curb --force --script https://example.com/s",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q\n--- full message ---\n%s", want, msg)
+		}
+	}
+}
+
+func TestScript_ForcePipesAndWarns(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: &stderr, force: true}
+	err := script(strings.NewReader("danger"), metaFor("https://example.com/s"), []Sieve{
+		blockSieve{name: "test", reason: "boom", hint: "do the thing"},
+	}, cfg)
+	if err != nil {
+		t.Fatalf("expected pass with --force, got %v", err)
+	}
+	if stdout.String() != "danger" {
+		t.Errorf("stdout = %q, want %q", stdout.String(), "danger")
+	}
+	if !strings.Contains(stderr.String(), "--force in effect") {
+		t.Errorf("expected --force warning on stderr, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "test: boom") {
+		t.Errorf("expected sieve reason in warning, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "next steps:") {
+		t.Errorf("forced warning should not include next-steps footer: %q", stderr.String())
 	}
 }
