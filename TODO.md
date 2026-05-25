@@ -3,18 +3,7 @@
 Prioritized backlog for what comes after v0.1.
 **P0** = next iteration. **P1** = soon. **P2** = eventually.
 
-> **Next up:** `Sieve` interface and harness.
-
-## P0 — beyond v0.1
-
-- ~~**Mode dispatch skeleton.**~~ Done. Internal `mode` enum, `Content-Type` →
-  `http.DetectContentType` sniff fallback, `--inspect`/`--download`/`--script`
-  force flags.
-- ~~**Mode C: binary download.**~~ Done. `-o` overwrites; piped stdout streams;
-  TTY auto-saves to CWD with filename from `Content-Disposition` or URL path,
-  refusing to clobber. Summary metrics on stderr.
-- **`Sieve` interface and harness.** Define the Go interface (name, evaluate, verdict).
-  Wire it into the Mode A code path even if only a trivial stub sieve ships first.
+> **Next up:** TOFU sieve (P1).
 
 ## P1 — making Mode A real
 
@@ -27,18 +16,24 @@ Prioritized backlog for what comes after v0.1.
 - **Mode A block UX.** When a sieve blocks, the stderr report ends with concrete
   next steps: `curb --inspect URL` (preview the script) and `curb --force URL`
   (override).
+- **Per-`Verdict` next-step hints.** Each `Verdict` carries its own remedy so
+  the block report can suggest the right action per sieve (TOFU drift →
+  `--inspect` / `--force`; heuristic → `--inspect`; nonempty → check the URL).
+  Today's harness suggests no hint at all, which is honest but not actionable.
+- **Widen `SieveMeta`.** Pass HTTP status and useful response headers so sieves
+  can produce diagnostic reasons (e.g. nonempty saying "HTTP 204 No Content"
+  instead of just "body is empty").
 
 ## P2 — broader request surface
 
 - Custom request headers (`-H`).
 - Request bodies for POST/PUT (`-X`, `-d`, `--data-binary`).
 - Auth helpers (`--bearer TOKEN`, `-u user:pass`).
+- **`-4` / `-6` flags.** Force IPv4 or IPv6 resolution. Default (no flag) stays as-is.
+- **`--version` flag.** Print version (and commit, via `runtime/debug.ReadBuildInfo`) and exit.
 - Progress bar for downloads (Mode C polish).
 
 ## Infra
 
-- ~~Purchase `gocurb.dev`, point DNS at GitHub Pages.~~ Done.
-- ~~Let's Encrypt SAN cert covering apex + `www`.~~ Done.
-- ~~Enable **Enforce HTTPS** in Repo → Settings → Pages.~~ Done.
 - **Site security headers (low priority).** Observatory C/50 (CSP, XFO, XCTO
-  missing). Cosmetic for our static page; see CLAUDE.md → *Site posture*.
+  missing). Cosmetic for our static page; see AGENTS.md → *Site posture*.

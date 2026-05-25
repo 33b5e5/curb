@@ -38,7 +38,7 @@ func main() {
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
 	flag.BoolVar(&forceInspect, "inspect", false, "force inspection mode (stream to stdout)")
 	flag.BoolVar(&forceDownload, "download", false, "force download mode")
-	flag.BoolVar(&forceScript, "script", false, "force pipe-guard mode (not yet implemented)")
+	flag.BoolVar(&forceScript, "script", false, "force pipe-guard mode")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
 		flag.PrintDefaults()
@@ -140,7 +140,7 @@ func run(client *http.Client, cfg config, raw string) error {
 	case modeDownload:
 		return download(body, resp, u, cfg)
 	case modeScript:
-		return errors.New("Mode A (--script) is not yet implemented")
+		return script(body, u, defaultSieves, cfg)
 	default:
 		return fmt.Errorf("internal: unknown mode %d", m)
 	}

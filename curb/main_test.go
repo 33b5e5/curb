@@ -240,16 +240,36 @@ func TestRun_ForcedDownloadOnTextual(t *testing.T) {
 	}
 }
 
-func TestRun_ScriptModeUnimplemented(t *testing.T) {
+func TestRun_ScriptModePassesBody(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "x")
+		io.WriteString(w, "echo hi")
 	}))
 	defer srv.Close()
 
-	cfg := config{forcedMode: modeScript, stdout: io.Discard, stderr: io.Discard}
+	var buf bytes.Buffer
+	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if buf.String() != "echo hi" {
+		t.Errorf("stdout = %q, want %q", buf.String(), "echo hi")
+	}
+}
+
+func TestRun_ScriptModeBlocksEmpty(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "0")
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard}
 	err := run(srv.Client(), cfg, srv.URL)
-	if err == nil || !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("expected unimplemented error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Errorf("expected sieve block, got %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("stdout should be empty on block, got %q", buf.String())
 	}
 }
 
