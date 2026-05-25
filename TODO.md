@@ -3,6 +3,8 @@
 Prioritized backlog for what comes after v0.1.
 **P0** = next iteration. **P1** = soon. **P2** = eventually.
 
+> **Next up:** Mode C (binary download).
+
 ## P0 — beyond v0.1
 
 - **Mode dispatch skeleton.** Detect `Content-Type` and fall back to magic-byte
