@@ -43,6 +43,7 @@ func main() {
 		forcePin      bool
 		noPin         bool
 		force         bool
+		showVersion   bool
 	)
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
 	flag.BoolVar(&forceInspect, "inspect", false, "force inspection mode (stream to stdout)")
@@ -51,11 +52,17 @@ func main() {
 	flag.BoolVar(&forcePin, "pin", false, "record current script hash (overrides TOFU mismatch)")
 	flag.BoolVar(&noPin, "no-pin", false, "skip the TOFU sieve for this invocation")
 	flag.BoolVar(&force, "force", false, "bypass sieve blocks (still warns on stderr)")
+	flag.BoolVar(&showVersion, "version", false, "print version info and exit")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	if showVersion {
+		printVersion(os.Stdout)
+		return
+	}
 
 	if flag.NArg() != 1 {
 		flag.Usage()
