@@ -24,11 +24,6 @@ type Verdict struct {
 	Reason string
 }
 
-// defaultSieves is the compiled-in list, in evaluation order.
-var defaultSieves = []Sieve{
-	nonemptySieve{},
-}
-
 // nonemptySieve blocks empty bodies: a 200 with no payload would otherwise
 // silently produce a no-op pipe and look like success.
 type nonemptySieve struct{}

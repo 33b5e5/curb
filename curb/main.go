@@ -26,6 +26,11 @@ type config struct {
 	stdout      io.Writer
 	stderr      io.Writer
 	stdoutIsTTY bool
+
+	// Mode A (--script) options.
+	forcePin bool
+	noPin    bool
+	tofuPath string // override pin-file location; tests set this to a tempdir
 }
 
 func main() {
@@ -34,11 +39,15 @@ func main() {
 		forceInspect  bool
 		forceDownload bool
 		forceScript   bool
+		forcePin      bool
+		noPin         bool
 	)
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
 	flag.BoolVar(&forceInspect, "inspect", false, "force inspection mode (stream to stdout)")
 	flag.BoolVar(&forceDownload, "download", false, "force download mode")
 	flag.BoolVar(&forceScript, "script", false, "force pipe-guard mode")
+	flag.BoolVar(&forcePin, "pin", false, "record current script hash (overrides TOFU mismatch)")
+	flag.BoolVar(&noPin, "no-pin", false, "skip the TOFU sieve for this invocation")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
 		flag.PrintDefaults()
@@ -55,6 +64,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
+	if err := validatePinFlags(forcePin, noPin, forced); err != nil {
+		fmt.Fprintln(os.Stderr, "curb:", err)
+		os.Exit(2)
+	}
 
 	cfg := config{
 		outPath:     outPath,
@@ -62,6 +75,8 @@ func main() {
 		stdout:      os.Stdout,
 		stderr:      os.Stderr,
 		stdoutIsTTY: isTerminal(os.Stdout),
+		forcePin:    forcePin,
+		noPin:       noPin,
 	}
 	if err := run(newClient(), cfg, flag.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
@@ -94,6 +109,39 @@ func selectMode(inspect, download, script, hasOut bool) (mode, error) {
 		pick = modeDownload
 	}
 	return pick, nil
+}
+
+func validatePinFlags(pin, noPin bool, forced mode) error {
+	if pin && noPin {
+		return errors.New("--pin and --no-pin are mutually exclusive")
+	}
+	if (pin || noPin) && forced != modeScript {
+		return errors.New("--pin and --no-pin require --script")
+	}
+	return nil
+}
+
+// buildSieves assembles the Mode A sieve chain. Order matters: cheaper checks
+// run first so we don't hash an empty body, etc.
+func buildSieves(cfg config) ([]Sieve, error) {
+	sieves := []Sieve{nonemptySieve{}}
+	if cfg.noPin {
+		return sieves, nil
+	}
+	path := cfg.tofuPath
+	if path == "" {
+		p, err := defaultTofuPath()
+		if err != nil {
+			return nil, err
+		}
+		path = p
+	}
+	sieves = append(sieves, tofuSieve{
+		path:     path,
+		forcePin: cfg.forcePin,
+		stderr:   cfg.stderr,
+	})
+	return sieves, nil
 }
 
 func newClient() *http.Client {
@@ -140,7 +188,11 @@ func run(client *http.Client, cfg config, raw string) error {
 	case modeDownload:
 		return download(body, resp, u, cfg)
 	case modeScript:
-		return script(body, u, defaultSieves, cfg)
+		sieves, err := buildSieves(cfg)
+		if err != nil {
+			return err
+		}
+		return script(body, u, sieves, cfg)
 	default:
 		return fmt.Errorf("internal: unknown mode %d", m)
 	}

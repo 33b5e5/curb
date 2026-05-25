@@ -3,13 +3,10 @@
 Prioritized backlog for what comes after v0.1.
 **P0** = next iteration. **P1** = soon. **P2** = eventually.
 
-> **Next up:** TOFU sieve (P1).
+> **Next up:** Heuristic sieve (P1).
 
 ## P1 — making Mode A real
 
-- **TOFU sieve.** SHA-256 of the script body, persisted at
-  `~/.config/curb/known.txt` keyed by URL. Warn on change; `--pin` / `--no-pin`
-  flags to control behavior.
 - **Heuristic sieve.** Pattern checks for `sudo` without context, `rm -rf /`,
   nested `curl|wget … | bash`, suspicious `base64 -d | sh`. Honest framing in
   the output: this is a smell test, not a guarantee.

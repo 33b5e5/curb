@@ -247,7 +247,7 @@ func TestRun_ScriptModePassesBody(t *testing.T) {
 	defer srv.Close()
 
 	var buf bytes.Buffer
-	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard}
+	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard, noPin: true}
 	if err := run(srv.Client(), cfg, srv.URL); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestRun_ScriptModeBlocksEmpty(t *testing.T) {
 	defer srv.Close()
 
 	var buf bytes.Buffer
-	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard}
+	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard, noPin: true}
 	err := run(srv.Client(), cfg, srv.URL)
 	if err == nil || !strings.Contains(err.Error(), "blocked") {
 		t.Errorf("expected sieve block, got %v", err)
