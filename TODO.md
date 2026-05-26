@@ -6,7 +6,6 @@
 - Request bodies for POST/PUT (`-X`, `-d`, `--data-binary`).
 - Auth helpers (`--bearer TOKEN`, `-u user:pass`).
 - **`-4` / `-6` flags.** Force IPv4 or IPv6 resolution. Default (no flag) stays as-is.
-- Progress bar for downloads (Mode C polish).
 
 ## Infra (LOW)
 

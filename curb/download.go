@@ -64,19 +64,19 @@ func isTextual(mt string) bool {
 
 func download(body io.Reader, resp *http.Response, u *url.URL, cfg config) error {
 	if cfg.outPath != "" {
-		return saveTo(body, cfg.outPath, true, cfg.stderr)
+		return saveTo(body, cfg.outPath, resp.ContentLength, true, cfg)
 	}
 	if !cfg.stdoutIsTTY {
-		return stream(body, cfg.stdout, cfg.stderr)
+		return stream(body, resp.ContentLength, cfg)
 	}
 	name, err := deriveFilename(resp, u)
 	if err != nil {
 		return err
 	}
-	return saveTo(body, name, false, cfg.stderr)
+	return saveTo(body, name, resp.ContentLength, false, cfg)
 }
 
-func saveTo(body io.Reader, dst string, allowOverwrite bool, stderr io.Writer) error {
+func saveTo(body io.Reader, dst string, total int64, allowOverwrite bool, cfg config) error {
 	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	if !allowOverwrite {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_EXCL
@@ -89,7 +89,11 @@ func saveTo(body io.Reader, dst string, allowOverwrite bool, stderr io.Writer) e
 		return err
 	}
 	start := time.Now()
-	n, copyErr := io.Copy(f, body)
+	src, bar := withProgress(body, "curb: downloading "+dst, total, cfg)
+	n, copyErr := io.Copy(f, src)
+	if bar != nil {
+		bar.finish()
+	}
 	closeErr := f.Close()
 	if copyErr != nil {
 		return copyErr
@@ -97,18 +101,32 @@ func saveTo(body io.Reader, dst string, allowOverwrite bool, stderr io.Writer) e
 	if closeErr != nil {
 		return closeErr
 	}
-	fmt.Fprintf(stderr, "curb: saved %s (%s in %s)\n", dst, humanBytes(n), time.Since(start).Round(time.Millisecond))
+	fmt.Fprintf(cfg.stderr, "curb: saved %s (%s in %s)\n", dst, humanBytes(n), time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
-func stream(body io.Reader, stdout, stderr io.Writer) error {
+func stream(body io.Reader, total int64, cfg config) error {
 	start := time.Now()
-	n, err := io.Copy(stdout, body)
+	src, bar := withProgress(body, "curb: streaming", total, cfg)
+	n, err := io.Copy(cfg.stdout, src)
+	if bar != nil {
+		bar.finish()
+	}
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "curb: %s in %s\n", humanBytes(n), time.Since(start).Round(time.Millisecond))
+	fmt.Fprintf(cfg.stderr, "curb: %s in %s\n", humanBytes(n), time.Since(start).Round(time.Millisecond))
 	return nil
+}
+
+// withProgress wraps body with a progress bar when stderr is a TTY.
+// Returns the original reader and a nil bar otherwise so callers stay simple.
+func withProgress(body io.Reader, label string, total int64, cfg config) (io.Reader, *progressBar) {
+	if !cfg.stderrIsTTY {
+		return body, nil
+	}
+	bar := newProgressBar(cfg.stderr, label, total)
+	return bar.wrap(body), bar
 }
 
 func deriveFilename(resp *http.Response, u *url.URL) (string, error) {

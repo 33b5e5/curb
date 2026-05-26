@@ -38,6 +38,7 @@ type config struct {
 	stdout      io.Writer
 	stderr      io.Writer
 	stdoutIsTTY bool
+	stderrIsTTY bool
 
 	// Mode A (--script) options.
 	forcePin bool
@@ -97,6 +98,7 @@ func main() {
 		stdout:      os.Stdout,
 		stderr:      os.Stderr,
 		stdoutIsTTY: isTerminal(os.Stdout),
+		stderrIsTTY: isTerminal(os.Stderr),
 		forcePin:    forcePin,
 		noPin:       noPin,
 		force:       force,
