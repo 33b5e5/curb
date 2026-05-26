@@ -19,7 +19,7 @@ public on GitHub and published to pkg.go.dev with a tagged release.
   memory-safe runtime, a tiny HTTPS-only attack surface, and (in pipe-guard mode)
   friction + smell tests + audit trail. Do not overpromise safety.
 - No punching down at curl. curl is a masterpiece of plumbing maintained under
-  hard conditions; curb is a specialized complement, not a critique.
+  hard conditions; curb is a minimalist alternative.
 
 ## Architecture (planned)
 
