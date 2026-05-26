@@ -25,11 +25,10 @@ public on GitHub and published to pkg.go.dev with a tagged release.
 
 - Three runtime modes, dispatched by `Content-Type` with magic-byte sniff fallback
   and override flags:
-  - **B — structured inspection:** stream JSON/HTML/XML/etc to stdout. The only
-    mode in v0.1.
-  - **C — binary download:** auto-save on TTY, stream on pipe, `-o` always wins.
-  - **A — pipe-guard:** buffer + validate before passing bytes to a shell.
-- **Modular sieves** (Go interface, compiled-in) drive Mode A's validation. TOFU
+  - **inspect:** stream JSON/HTML/XML/etc to stdout. The only mode in v0.1.
+  - **download:** auto-save on TTY, stream on pipe, `-o` always wins.
+  - **script:** pipe-guard. Buffer + validate before passing bytes to a shell.
+- **Modular sieves** (Go interface, compiled-in) drive `script` validation. TOFU
   pinning and heuristic checks are sieves; more can be added over time.
 
 See [`TODO.md`](TODO.md) for the prioritized roadmap.

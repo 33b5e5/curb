@@ -59,9 +59,9 @@ type sieveHit struct {
 	v    Verdict
 }
 
-// script implements Mode A: buffer the body, run sieves, emit only if all pass.
-// With cfg.force, sieve blocks become warnings on stderr and the body is piped
-// anyway.
+// script implements pipe-guard mode: buffer the body, run sieves, emit only
+// if all pass. With cfg.force, sieve blocks become warnings on stderr and the
+// body is piped anyway.
 func script(body io.Reader, meta SieveMeta, sieves []Sieve, cfg config) error {
 	buf, err := io.ReadAll(body)
 	if err != nil {

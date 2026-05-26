@@ -27,9 +27,9 @@ type mode int
 
 const (
 	modeAuto     mode = iota
-	modeInspect       // B — structured inspection (stream to stdout)
-	modeDownload      // C — binary download
-	modeScript        // A — pipe-guard (not yet implemented)
+	modeInspect       // structured inspection (stream to stdout)
+	modeDownload      // binary download
+	modeScript        // pipe-guard
 )
 
 type config struct {
@@ -40,7 +40,7 @@ type config struct {
 	stdoutIsTTY bool
 	stderrIsTTY bool
 
-	// Mode A (--script) options.
+	// --script options.
 	forcePin bool
 	noPin    bool
 	force    bool
@@ -146,8 +146,8 @@ func validateScriptFlags(pin, noPin, force bool, forced mode) error {
 	return nil
 }
 
-// buildSieves assembles the Mode A sieve chain. Order matters: cheaper checks
-// run first so we don't hash an empty body, etc.
+// buildSieves assembles the script-mode sieve chain. Order matters: cheaper
+// checks run first so we don't hash an empty body, etc.
 func buildSieves(cfg config) ([]Sieve, error) {
 	sieves := []Sieve{nonemptySieve{}, heuristicSieve{}}
 	if cfg.noPin {
