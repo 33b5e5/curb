@@ -1,7 +1,5 @@
 # curb roadmap
 
-Prioritized backlog for what comes after v0.1.
-
 ## Broader request surface (MED)
 
 - Custom request headers (`-H`).

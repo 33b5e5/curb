@@ -1,7 +1,7 @@
 # curb — agent guidance
 
-`curb` is a modern, HTTPS-only transport utility written in Go. The user (rig) is
-iterating on it privately before sharing publicly.
+`curb` is a modern, HTTPS-only transport utility written in Go. The repo is
+public on GitHub and published to pkg.go.dev with a tagged release.
 
 ## Hard constraints
 
