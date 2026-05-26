@@ -1,3 +1,15 @@
+// Curb is a modern, HTTPS-only transport utility written in Go using only
+// the standard library. It dispatches each response to one of three modes:
+//
+//   - inspect: stream textual payloads (JSON, HTML, XML, …) to stdout.
+//   - download: save binaries to disk; streams to stdout on a pipe.
+//   - script: pipe-guard. Buffer the body, run it through sieves
+//     (nonempty, heuristic, tofu), emit only on pass.
+//
+// Mode is chosen from Content-Type by default, with a magic-byte sniff
+// fallback. Override with --inspect, --download, or --script.
+//
+// See https://gocurb.dev for full documentation.
 package main
 
 import (
