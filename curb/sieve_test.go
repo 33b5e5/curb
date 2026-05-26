@@ -60,10 +60,10 @@ func TestNonemptySieve_MentionsHTTPStatus(t *testing.T) {
 	}
 }
 
-func TestScript_PassesWhenAllSievesPass(t *testing.T) {
+func TestVet_PassesWhenAllSievesPass(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	err := script(strings.NewReader("echo hello"), metaFor("https://example.com/s"),
+	err := vet(strings.NewReader("echo hello"), metaFor("https://example.com/s"),
 		[]Sieve{passSieve{}}, cfg)
 	if err != nil {
 		t.Fatalf("expected pass, got %v", err)
@@ -73,10 +73,10 @@ func TestScript_PassesWhenAllSievesPass(t *testing.T) {
 	}
 }
 
-func TestScript_BlocksAndWithholdsPayload(t *testing.T) {
+func TestVet_BlocksAndWithholdsPayload(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	err := script(strings.NewReader("echo hello"), metaFor("https://example.com/s"),
+	err := vet(strings.NewReader("echo hello"), metaFor("https://example.com/s"),
 		[]Sieve{blockSieve{name: "test", reason: "nope"}}, cfg)
 	if err == nil {
 		t.Fatal("expected block error")
@@ -89,10 +89,10 @@ func TestScript_BlocksAndWithholdsPayload(t *testing.T) {
 	}
 }
 
-func TestScript_CollectsAllBlocks(t *testing.T) {
+func TestVet_CollectsAllBlocks(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	err := script(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
+	err := vet(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
 		blockSieve{name: "a", reason: "r1"},
 		blockSieve{name: "b", reason: "r2"},
 	}, cfg)
@@ -106,10 +106,10 @@ func TestScript_CollectsAllBlocks(t *testing.T) {
 	}
 }
 
-func TestScript_OneBlockAmongPasses(t *testing.T) {
+func TestVet_OneBlockAmongPasses(t *testing.T) {
 	var stdout bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: io.Discard}
-	err := script(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
+	err := vet(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
 		passSieve{},
 		blockSieve{name: "bad", reason: "stop"},
 		passSieve{},
@@ -122,13 +122,13 @@ func TestScript_OneBlockAmongPasses(t *testing.T) {
 	}
 }
 
-func TestScript_PassesMetaToSieves(t *testing.T) {
+func TestVet_PassesMetaToSieves(t *testing.T) {
 	saw := &sawMetaSieve{}
 	cfg := config{stdout: io.Discard, stderr: io.Discard}
 	u, _ := url.Parse("https://example.com/install.sh")
 	meta := SieveMeta{URL: u, Status: 200, Header: http.Header{"X-Test": {"yes"}}}
-	if err := script(strings.NewReader("x"), meta, []Sieve{saw}, cfg); err != nil {
-		t.Fatalf("script: %v", err)
+	if err := vet(strings.NewReader("x"), meta, []Sieve{saw}, cfg); err != nil {
+		t.Fatalf("vet: %v", err)
 	}
 	if saw.seen.URL != u {
 		t.Errorf("URL not propagated: got %v, want %v", saw.seen.URL, u)
@@ -141,9 +141,9 @@ func TestScript_PassesMetaToSieves(t *testing.T) {
 	}
 }
 
-func TestScript_BlockReportIncludesHintsAndFooter(t *testing.T) {
+func TestVet_BlockReportIncludesHintsAndFooter(t *testing.T) {
 	cfg := config{stdout: io.Discard, stderr: io.Discard}
-	err := script(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
+	err := vet(strings.NewReader("x"), metaFor("https://example.com/s"), []Sieve{
 		blockSieve{name: "test", reason: "boom", hint: "do the thing"},
 	}, cfg)
 	if err == nil {
@@ -155,7 +155,7 @@ func TestScript_BlockReportIncludesHintsAndFooter(t *testing.T) {
 		"→ do the thing",
 		"next steps:",
 		"curb --inspect https://example.com/s",
-		"curb --force --script https://example.com/s",
+		"curb --force --vet https://example.com/s",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error missing %q\n--- full message ---\n%s", want, msg)
@@ -163,10 +163,10 @@ func TestScript_BlockReportIncludesHintsAndFooter(t *testing.T) {
 	}
 }
 
-func TestScript_ForcePipesAndWarns(t *testing.T) {
+func TestVet_ForcePipesAndWarns(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cfg := config{stdout: &stdout, stderr: &stderr, force: true}
-	err := script(strings.NewReader("danger"), metaFor("https://example.com/s"), []Sieve{
+	err := vet(strings.NewReader("danger"), metaFor("https://example.com/s"), []Sieve{
 		blockSieve{name: "test", reason: "boom", hint: "do the thing"},
 	}, cfg)
 	if err != nil {

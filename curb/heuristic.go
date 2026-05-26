@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// heuristicSieve runs pattern-based smell tests over the script body.
+// heuristicSieve runs pattern-based smell tests over the body.
 // False positives are expected: this is a friction layer, not a guarantee.
 // The Reason text says so explicitly.
 type heuristicSieve struct{}

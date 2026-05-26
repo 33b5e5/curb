@@ -12,8 +12,8 @@ import (
 )
 
 // tofuSieve implements trust-on-first-use pinning. It records SHA-256 of the
-// script body keyed by URL in a text file. Subsequent fetches must match the
-// pinned hash, or the sieve blocks.
+// body keyed by URL in a text file. Subsequent fetches must match the pinned
+// hash, or the sieve blocks.
 type tofuSieve struct {
 	path     string
 	forcePin bool
@@ -54,11 +54,11 @@ func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 	default:
 		hint := "if the change is expected, accept the new hash with --pin"
 		if meta.URL != nil {
-			hint = fmt.Sprintf("if expected: curb --pin --script %s", meta.URL)
+			hint = fmt.Sprintf("if expected: curb --pin --vet %s", meta.URL)
 		}
 		return Verdict{
 			Block:  true,
-			Reason: fmt.Sprintf("script body changed (pinned %s, got %s)", pinned[:12], cur[:12]),
+			Reason: fmt.Sprintf("body changed (pinned %s, got %s)", pinned[:12], cur[:12]),
 			Hint:   hint,
 		}
 	}

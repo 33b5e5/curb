@@ -1,13 +1,13 @@
 // Curb is a modern, HTTPS-only transport utility written in Go using only
-// the standard library. It dispatches each response to one of three modes:
+// the standard library. It picks one of three modes per response:
 //
 //   - inspect: stream textual payloads (JSON, HTML, XML, …) to stdout.
 //   - download: save binaries to disk; streams to stdout on a pipe.
-//   - script: pipe-guard. Buffer the body, run it through sieves
-//     (nonempty, heuristic, tofu), emit only on pass.
+//   - vet: buffer the body, run it through sieves (nonempty, heuristic, tofu),
+//     emit only on pass.
 //
 // Mode is chosen from Content-Type by default, with a magic-byte sniff
-// fallback. Override with --inspect, --download, or --script.
+// fallback. Override with --inspect, --download, or --vet.
 //
 // See https://gocurb.dev for full documentation.
 package main
@@ -30,9 +30,9 @@ type mode int
 
 const (
 	modeAuto     mode = iota
-	modeInspect       // structured inspection (stream to stdout)
-	modeDownload      // binary download
-	modeScript        // pipe-guard
+	modeInspect       // stream to stdout
+	modeDownload      // save to disk
+	modeVet           // buffer and validate before emitting
 )
 
 type config struct {
@@ -43,7 +43,7 @@ type config struct {
 	stdoutIsTTY bool
 	stderrIsTTY bool
 
-	// --script options.
+	// --vet options.
 	forcePin bool
 	noPin    bool
 	force    bool
@@ -55,7 +55,7 @@ func main() {
 		outPath       string
 		forceInspect  bool
 		forceDownload bool
-		forceScript   bool
+		forceVet      bool
 		forcePin      bool
 		noPin         bool
 		force         bool
@@ -66,8 +66,8 @@ func main() {
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
 	flag.BoolVar(&forceInspect, "inspect", false, "force inspection mode (stream to stdout)")
 	flag.BoolVar(&forceDownload, "download", false, "force download mode")
-	flag.BoolVar(&forceScript, "script", false, "force pipe-guard mode")
-	flag.BoolVar(&forcePin, "pin", false, "record current script hash (overrides TOFU mismatch)")
+	flag.BoolVar(&forceVet, "vet", false, "force vet mode (buffer and validate before piping)")
+	flag.BoolVar(&forcePin, "pin", false, "record current body hash (overrides TOFU mismatch)")
 	flag.BoolVar(&noPin, "no-pin", false, "skip the TOFU sieve for this invocation")
 	flag.BoolVar(&force, "force", false, "bypass sieve blocks (still warns on stderr)")
 	flag.BoolVar(&ipv4Only, "4", false, "force IPv4 resolution")
@@ -89,12 +89,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	forced, err := selectMode(forceInspect, forceDownload, forceScript, outPath != "")
+	forced, err := selectMode(forceInspect, forceDownload, forceVet, outPath != "")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
-	if err := validateScriptFlags(forcePin, noPin, force, forced); err != nil {
+	if err := validateVetFlags(forcePin, noPin, force, forced); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
@@ -121,7 +121,7 @@ func main() {
 	}
 }
 
-func selectMode(inspect, download, script, hasOut bool) (mode, error) {
+func selectMode(inspect, download, vet, hasOut bool) (mode, error) {
 	count := 0
 	pick := modeAuto
 	if inspect {
@@ -132,33 +132,33 @@ func selectMode(inspect, download, script, hasOut bool) (mode, error) {
 		count++
 		pick = modeDownload
 	}
-	if script {
+	if vet {
 		count++
-		pick = modeScript
+		pick = modeVet
 	}
 	if count > 1 {
-		return modeAuto, errors.New("--inspect, --download, --script are mutually exclusive")
+		return modeAuto, errors.New("--inspect, --download, --vet are mutually exclusive")
 	}
 	if hasOut {
-		if pick == modeInspect || pick == modeScript {
-			return modeAuto, errors.New("-o is incompatible with --inspect and --script")
+		if pick == modeInspect || pick == modeVet {
+			return modeAuto, errors.New("-o is incompatible with --inspect and --vet")
 		}
 		pick = modeDownload
 	}
 	return pick, nil
 }
 
-func validateScriptFlags(pin, noPin, force bool, forced mode) error {
+func validateVetFlags(pin, noPin, force bool, forced mode) error {
 	if pin && noPin {
 		return errors.New("--pin and --no-pin are mutually exclusive")
 	}
-	if (pin || noPin || force) && forced != modeScript {
-		return errors.New("--pin, --no-pin, and --force require --script")
+	if (pin || noPin || force) && forced != modeVet {
+		return errors.New("--pin, --no-pin, and --force require --vet")
 	}
 	return nil
 }
 
-// buildSieves assembles the script-mode sieve chain. Order matters: cheaper
+// buildSieves assembles the vet-mode sieve chain. Order matters: cheaper
 // checks run first so we don't hash an empty body, etc.
 func buildSieves(cfg config) ([]Sieve, error) {
 	sieves := []Sieve{nonemptySieve{}, heuristicSieve{}}
@@ -248,13 +248,13 @@ func run(client *http.Client, cfg config, raw string) error {
 		return err
 	case modeDownload:
 		return download(body, resp, u, cfg)
-	case modeScript:
+	case modeVet:
 		sieves, err := buildSieves(cfg)
 		if err != nil {
 			return err
 		}
 		meta := SieveMeta{URL: u, Status: resp.StatusCode, Header: resp.Header}
-		return script(body, meta, sieves, cfg)
+		return vet(body, meta, sieves, cfg)
 	default:
 		return fmt.Errorf("internal: unknown mode %d", m)
 	}

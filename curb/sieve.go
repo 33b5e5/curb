@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// Sieve evaluates a buffered script body before it's passed to a shell.
-// Compiled-in sieves run sequentially; any block halts the pipe-guard.
+// Sieve evaluates a buffered body before it's passed to a shell.
+// Compiled-in sieves run sequentially; any block halts the vet.
 type Sieve interface {
 	Name() string
 	Evaluate(body []byte, meta SieveMeta) Verdict
@@ -59,10 +59,10 @@ type sieveHit struct {
 	v    Verdict
 }
 
-// script implements pipe-guard mode: buffer the body, run sieves, emit only
-// if all pass. With cfg.force, sieve blocks become warnings on stderr and the
-// body is piped anyway.
-func script(body io.Reader, meta SieveMeta, sieves []Sieve, cfg config) error {
+// vet buffers the body, runs it through sieves, and emits only if all pass.
+// With cfg.force, sieve blocks become warnings on stderr and the body is piped
+// anyway.
+func vet(body io.Reader, meta SieveMeta, sieves []Sieve, cfg config) error {
 	buf, err := io.ReadAll(body)
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func formatHits(hits []sieveHit, u *url.URL, forced bool) string {
 	if forced {
 		msg.WriteString("--force in effect; sieve(s) flagged this body:")
 	} else {
-		msg.WriteString("--script blocked by sieve(s):")
+		msg.WriteString("--vet blocked by sieve(s):")
 	}
 	for _, h := range hits {
 		fmt.Fprintf(&msg, "\n  - %s: %s", h.name, h.v.Reason)
@@ -101,7 +101,7 @@ func formatHits(hits []sieveHit, u *url.URL, forced bool) string {
 	if !forced && u != nil {
 		fmt.Fprintf(&msg, "\n\nnext steps:")
 		fmt.Fprintf(&msg, "\n  curb --inspect %s", u)
-		fmt.Fprintf(&msg, "\n  curb --force --script %s", u)
+		fmt.Fprintf(&msg, "\n  curb --force --vet %s", u)
 	}
 	return msg.String()
 }

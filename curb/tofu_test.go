@@ -175,7 +175,7 @@ func TestLoadPin_AbsentFileNoError(t *testing.T) {
 	}
 }
 
-func TestValidateScriptFlags(t *testing.T) {
+func TestValidateVetFlags(t *testing.T) {
 	cases := []struct {
 		name    string
 		pin     bool
@@ -185,17 +185,17 @@ func TestValidateScriptFlags(t *testing.T) {
 		wantErr bool
 	}{
 		{"neither", false, false, false, modeAuto, false},
-		{"pin with script", true, false, false, modeScript, false},
-		{"no-pin with script", false, true, false, modeScript, false},
-		{"force with script", false, false, true, modeScript, false},
-		{"all three (force+pin)", true, false, true, modeScript, false},
-		{"pin+no-pin conflict", true, true, false, modeScript, true},
-		{"pin without script", true, false, false, modeAuto, true},
-		{"no-pin without script", false, true, false, modeInspect, true},
-		{"force without script", false, false, true, modeAuto, true},
+		{"pin with vet", true, false, false, modeVet, false},
+		{"no-pin with vet", false, true, false, modeVet, false},
+		{"force with vet", false, false, true, modeVet, false},
+		{"all three (force+pin)", true, false, true, modeVet, false},
+		{"pin+no-pin conflict", true, true, false, modeVet, true},
+		{"pin without vet", true, false, false, modeAuto, true},
+		{"no-pin without vet", false, true, false, modeInspect, true},
+		{"force without vet", false, false, true, modeAuto, true},
 	}
 	for _, c := range cases {
-		err := validateScriptFlags(c.pin, c.noPin, c.force, c.forced)
+		err := validateVetFlags(c.pin, c.noPin, c.force, c.forced)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%s: err=%v wantErr=%v", c.name, err, c.wantErr)
 		}
@@ -232,7 +232,7 @@ func TestBuildSieves_IncludesTofuByDefault(t *testing.T) {
 	}
 }
 
-func TestRun_ScriptModeTOFUBlocksOnHashChange(t *testing.T) {
+func TestRun_VetModeTOFUBlocksOnHashChange(t *testing.T) {
 	body := "echo first"
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, body)
@@ -240,7 +240,7 @@ func TestRun_ScriptModeTOFUBlocksOnHashChange(t *testing.T) {
 	defer srv.Close()
 
 	path := tofuTempPath(t)
-	cfg := config{forcedMode: modeScript, stdout: io.Discard, stderr: io.Discard, tofuPath: path}
+	cfg := config{forcedMode: modeVet, stdout: io.Discard, stderr: io.Discard, tofuPath: path}
 	// First run: TOFU pins.
 	if err := run(srv.Client(), cfg, srv.URL); err != nil {
 		t.Fatalf("first run: %v", err)
@@ -261,7 +261,7 @@ func TestRun_ScriptModeTOFUBlocksOnHashChange(t *testing.T) {
 	}
 }
 
-func TestRun_ScriptModeTOFUPinFlagOverrides(t *testing.T) {
+func TestRun_VetModeTOFUPinFlagOverrides(t *testing.T) {
 	body := "echo first"
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, body)
@@ -269,7 +269,7 @@ func TestRun_ScriptModeTOFUPinFlagOverrides(t *testing.T) {
 	defer srv.Close()
 
 	path := tofuTempPath(t)
-	cfg := config{forcedMode: modeScript, stdout: io.Discard, stderr: io.Discard, tofuPath: path}
+	cfg := config{forcedMode: modeVet, stdout: io.Discard, stderr: io.Discard, tofuPath: path}
 	if err := run(srv.Client(), cfg, srv.URL); err != nil {
 		t.Fatalf("first run: %v", err)
 	}

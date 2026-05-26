@@ -240,14 +240,14 @@ func TestRun_ForcedDownloadOnTextual(t *testing.T) {
 	}
 }
 
-func TestRun_ScriptModePassesBody(t *testing.T) {
+func TestRun_VetModePassesBody(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "echo hi")
 	}))
 	defer srv.Close()
 
 	var buf bytes.Buffer
-	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard, noPin: true}
+	cfg := config{forcedMode: modeVet, stdout: &buf, stderr: io.Discard, noPin: true}
 	if err := run(srv.Client(), cfg, srv.URL); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -256,14 +256,14 @@ func TestRun_ScriptModePassesBody(t *testing.T) {
 	}
 }
 
-func TestRun_ScriptModeBlocksEmpty(t *testing.T) {
+func TestRun_VetModeBlocksEmpty(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "0")
 	}))
 	defer srv.Close()
 
 	var buf bytes.Buffer
-	cfg := config{forcedMode: modeScript, stdout: &buf, stderr: io.Discard, noPin: true}
+	cfg := config{forcedMode: modeVet, stdout: &buf, stderr: io.Discard, noPin: true}
 	err := run(srv.Client(), cfg, srv.URL)
 	if err == nil || !strings.Contains(err.Error(), "blocked") {
 		t.Errorf("expected sieve block, got %v", err)
@@ -273,7 +273,7 @@ func TestRun_ScriptModeBlocksEmpty(t *testing.T) {
 	}
 }
 
-func TestRun_ScriptModeForcePipesDespiteBlock(t *testing.T) {
+func TestRun_VetModeForcePipesDespiteBlock(t *testing.T) {
 	body := "rm -rf /\n"
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, body)
@@ -282,7 +282,7 @@ func TestRun_ScriptModeForcePipesDespiteBlock(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	cfg := config{
-		forcedMode: modeScript,
+		forcedMode: modeVet,
 		stdout:     &stdout,
 		stderr:     &stderr,
 		noPin:      true,
@@ -340,10 +340,10 @@ func TestSelectMode(t *testing.T) {
 		{"none", false, false, false, false, modeAuto, false},
 		{"inspect", true, false, false, false, modeInspect, false},
 		{"download", false, true, false, false, modeDownload, false},
-		{"script", false, false, true, false, modeScript, false},
+		{"vet", false, false, true, false, modeVet, false},
 		{"out implies download", false, false, false, true, modeDownload, false},
 		{"out + inspect conflict", true, false, false, true, modeAuto, true},
-		{"out + script conflict", false, false, true, true, modeAuto, true},
+		{"out + vet conflict", false, false, true, true, modeAuto, true},
 		{"out + download fine", false, true, false, true, modeDownload, false},
 		{"inspect + download conflict", true, true, false, false, modeAuto, true},
 		{"all three conflict", true, true, true, false, modeAuto, true},
