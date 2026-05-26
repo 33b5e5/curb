@@ -360,6 +360,75 @@ func TestSelectMode(t *testing.T) {
 	}
 }
 
+func TestSelectNetwork(t *testing.T) {
+	cases := []struct {
+		name    string
+		v4, v6  bool
+		want    string
+		wantErr bool
+	}{
+		{"neither", false, false, "tcp", false},
+		{"v4 only", true, false, "tcp4", false},
+		{"v6 only", false, true, "tcp6", false},
+		{"both conflict", true, true, "", true},
+	}
+	for _, c := range cases {
+		got, err := selectNetwork(c.v4, c.v6)
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: err=%v wantErr=%v", c.name, err, c.wantErr)
+			continue
+		}
+		if err == nil && got != c.want {
+			t.Errorf("%s: got=%q want=%q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestNewClient_ForcedIPv6FailsAgainstV4Server(t *testing.T) {
+	// httptest binds to 127.0.0.1; dialing that literal over tcp6 has no
+	// suitable address and must fail before any HTTP round-trip.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "should not reach handler")
+	}))
+	defer srv.Close()
+
+	client := newClient("tcp6")
+	// Trust the test server's self-signed cert via the same transport's TLSConfig.
+	client.Transport.(*http.Transport).TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig
+
+	err := run(client, config{stdout: io.Discard, stderr: io.Discard}, srv.URL)
+	if err == nil {
+		t.Fatal("expected error dialing v4 literal over tcp6, got nil")
+	}
+}
+
+func TestNewClient_ForcedIPv4Succeeds(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	client := newClient("tcp4")
+	client.Transport.(*http.Transport).TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig
+
+	var buf bytes.Buffer
+	if err := run(client, bufCfg(&buf), srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if buf.String() != "ok" {
+		t.Errorf("body = %q, want %q", buf.String(), "ok")
+	}
+}
+
+func TestNewClient_DefaultLeavesDialerAlone(t *testing.T) {
+	// Sanity: when network is "tcp", DialContext stays nil so net/http uses its
+	// own default dialer (preserving prior behavior).
+	c := newClient("tcp")
+	if c.Transport.(*http.Transport).DialContext != nil {
+		t.Errorf("expected nil DialContext for default network, got non-nil")
+	}
+}
+
 func TestSafeBasename(t *testing.T) {
 	cases := []struct {
 		in      string

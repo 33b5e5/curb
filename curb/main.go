@@ -13,14 +13,17 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 )
 
 type mode int
@@ -56,6 +59,8 @@ func main() {
 		forcePin      bool
 		noPin         bool
 		force         bool
+		ipv4Only      bool
+		ipv6Only      bool
 		showVersion   bool
 	)
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
@@ -65,6 +70,8 @@ func main() {
 	flag.BoolVar(&forcePin, "pin", false, "record current script hash (overrides TOFU mismatch)")
 	flag.BoolVar(&noPin, "no-pin", false, "skip the TOFU sieve for this invocation")
 	flag.BoolVar(&force, "force", false, "bypass sieve blocks (still warns on stderr)")
+	flag.BoolVar(&ipv4Only, "4", false, "force IPv4 resolution")
+	flag.BoolVar(&ipv6Only, "6", false, "force IPv6 resolution")
 	flag.BoolVar(&showVersion, "version", false, "print version info and exit")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
@@ -91,6 +98,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
+	network, err := selectNetwork(ipv4Only, ipv6Only)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "curb:", err)
+		os.Exit(2)
+	}
 
 	cfg := config{
 		outPath:     outPath,
@@ -103,7 +115,7 @@ func main() {
 		noPin:       noPin,
 		force:       force,
 	}
-	if err := run(newClient(), cfg, flag.Arg(0)); err != nil {
+	if err := run(newClient(network), cfg, flag.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(1)
 	}
@@ -169,12 +181,36 @@ func buildSieves(cfg config) ([]Sieve, error) {
 	return sieves, nil
 }
 
-func newClient() *http.Client {
+func newClient(network string) *http.Client {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+	if network != "tcp" {
+		// Mirror net/http's default dialer timings; only the network is forced.
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		transport.DialContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, addr)
+		}
+	}
 	return &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-		},
+		Transport:     transport,
 		CheckRedirect: checkRedirect,
+	}
+}
+
+// selectNetwork resolves -4 / -6 into the network string passed to net.Dialer.
+// Returns "tcp" when neither is set (let the resolver pick).
+func selectNetwork(v4, v6 bool) (string, error) {
+	if v4 && v6 {
+		return "", errors.New("-4 and -6 are mutually exclusive")
+	}
+	switch {
+	case v4:
+		return "tcp4", nil
+	case v6:
+		return "tcp6", nil
+	default:
+		return "tcp", nil
 	}
 }
 
