@@ -15,11 +15,11 @@ public on GitHub and published to pkg.go.dev with a tagged release.
 
 - Stay small. Curb is meant to be a tool a curious developer can read in one
   sitting.
-- Honest framing about safety: curb offers a modern
-  memory-safe runtime, a tiny HTTPS-only attack surface, and (in pipe-guard mode)
-  friction + smell tests + audit trail. Do not overpromise safety.
-- No punching down at curl. curl is a masterpiece of plumbing maintained under
-  hard conditions; curb is a minimalist alternative.
+- Honest framing about safety: curb offers a modern memory-safe runtime, a tiny 
+  HTTPS-only attack surface, and in pipe mode, extra friction. Do not overpromise 
+  on safety in our messaging.
+- No punching down at curl or other tools. curl is a masterpiece of plumbing 
+  maintained under difficult conditions. curb is a minimalist alternative.
 
 ## Architecture (planned)
 
@@ -31,7 +31,20 @@ public on GitHub and published to pkg.go.dev with a tagged release.
 - **Modular sieves** (Go interface, compiled-in) drive `script` validation. TOFU
   pinning and heuristic checks are sieves; more can be added over time.
 
-See [`TODO.md`](TODO.md) for the prioritized roadmap.
+## Roadmap and issue tracking
+
+Planned work, feature requests, and bug reports live in GitHub issues at
+https://github.com/33b5e5/curb/issues. There is no checked-in roadmap file.
+
+With `gh` installed and run from inside the repo:
+
+- `gh issue list` shows what's open.
+- `gh issue list --label enhancement` filters to feature requests.
+- `gh issue view <number>` shows full detail, including the design rationale
+  captured at filing time.
+
+When picking up an issue, reference its number in commit messages and PR
+descriptions so the history stays linked back to its motivation.
 
 ## Style
 
@@ -53,25 +66,17 @@ page at `https://gocurb.dev/`, and the Go vanity-import resolver via the
 GH Pages does not let you set custom response headers on custom domains. The
 "Enforce HTTPS" toggle adds an HTTP→HTTPS 301 but does *not* send
 `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`,
-or `X-Content-Type-Options`. Mozilla Observatory rates the site C/50 as a
-result; SSL Labs rates it A.
-
-This is cosmetic for our actual risk model. The landing page is one static
-HTML file with no JavaScript, no forms, no user input, no third-party
-resources, no interactivity. CSP/XFO/XCTO protect against attacks that have
-no vector here. HSTS at the browser level is already provided by the `.dev`
-TLD preload list.
-
-Don't suggest "fixes" (Cloudflare proxy, moving host) unless the site grows
-features that create real attack surface — forms, JS, third-party embeds,
-user-generated content. Until then the grade is a checklist artifact, not a
-real risk.
+or `X-Content-Type-Options`. Thus, Mozilla Observatory rates the site C/50 as 
+a result; SSL Labs rates it A. This is cosmetic for our actual risk model. 
+The landing page is one static HTML file with no JavaScript, no forms, no 
+user input, no third-party resources, no interactivity. CSP/XFO/XCTO protect 
+against attacks that have no vector. HSTS at the browser level is already 
+provided by the `.dev` TLD preload list.
 
 ## Source of truth
 
-This file and [`TODO.md`](TODO.md) are the source of truth for project direction.
-During early iteration, avoid over-polishing user-facing messaging (README copy,
-slogans, positioning) — those will evolve as the design firms up.
+This file is the source of truth for project direction and conventions; GitHub
+issues track planned work (see *Roadmap and issue tracking* above).
 
 ## Claude
 
