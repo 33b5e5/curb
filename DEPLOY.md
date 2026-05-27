@@ -36,8 +36,10 @@ git push origin vX.Y.Z
 gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here."
 ```
 
-Alternatives: `--generate-notes` auto-fills from commits since the previous tag; `--notes-file path/to/notes.md` reads
-from disk; omit both to open `$EDITOR`.
+Alternatives: `--notes-file path/to/notes.md` reads from disk; omit `--notes` to open `$EDITOR`. `--generate-notes` is
+also available but only useful with a PR-based workflow (it summarizes merged PRs in the compare range; on a
+direct-to-`main` history it just emits a bare compare link). Pair any of these with `--draft` to stage the release for
+review before publishing.
 
 ## 5. Verify
 
