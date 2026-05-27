@@ -4,42 +4,242 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="go-import" content="gocurb.dev git https://github.com/33b5e5/curb">
-<title>curb: HTTPS-only transport utility</title>
+<meta name="description" content="curb is a modern HTTPS-only alternative to curl and wget. Written in Go, zero dependencies.">
+<meta name="theme-color" content="#33b5e5">
+<title>curb: a modern HTTPS-only alternative to curl and wget</title>
 <style>
-  body {
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    max-width: 38rem;
-    margin: 4rem auto;
-    padding: 0 1.25rem;
-    color: #222;
+  :root {
+    --bg: #fafaf7;
+    --fg: #1a1a1a;
+    --muted: #5a5a5a;
+    --accent: #33b5e5;
+    --accent-strong: #1f8fc0;
+    --code-bg: #f1efe8;
+    --code-border: #e5e3dc;
+    --comment: #8a8a8a;
   }
-  h1 { font-weight: 600; margin: 0 0 0.5rem; }
-  h2 { font-weight: 600; font-size: 1.05rem; margin: 2rem 0 0.5rem; }
-  code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1216;
+      --fg: #e8e8e8;
+      --muted: #9aa0a6;
+      --accent: #33b5e5;
+      --accent-strong: #66c8ee;
+      --code-bg: #161b21;
+      --code-border: #232a32;
+      --comment: #6a737d;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 5rem;
+    color: var(--fg);
+    background: var(--bg);
+  }
+
+  header { margin-bottom: 1rem; }
+
+  h1 {
+    font-size: 3.25rem;
+    font-weight: 700;
+    letter-spacing: -0.045em;
+    margin: 0;
+    line-height: 1;
+    display: inline-block;
+  }
+
+  h1::after {
+    content: "";
+    display: block;
+    width: 3rem;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin-top: 0.65rem;
+  }
+
+  .tagline {
+    font-size: 1.2rem;
+    color: var(--muted);
+    margin: 1.25rem 0 0;
+    line-height: 1.45;
+  }
+
+  h2 {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 2.75rem 0 0.85rem;
+  }
+
+  p { margin: 0 0 1rem; }
+
+  code, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+
   pre {
-    background: #f4f4f4;
-    padding: 0.75rem 1rem;
+    background: var(--code-bg);
+    color: var(--fg);
+    padding: 1rem 1.15rem;
+    border-radius: 6px;
+    border: 1px solid var(--code-border);
+    overflow-x: auto;
+    line-height: 1.55;
+    margin: 0 0 1rem;
+  }
+
+  pre code { font-size: inherit; }
+
+  p code, li code {
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  .cmt { color: var(--comment); }
+
+  .modes {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .modes li {
+    padding: 0.7rem 1rem;
+    background: var(--code-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    line-height: 1.55;
+  }
+
+  .modes code {
+    background: transparent;
+    padding: 0;
+    color: var(--accent-strong);
+    font-weight: 600;
+  }
+
+  .grounds {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+  }
+
+  .grounds li {
+    padding: 0.35rem 0 0.35rem 1.25rem;
+    position: relative;
+    line-height: 1.55;
+  }
+
+  .grounds li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.95rem;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .grounds strong { font-weight: 600; }
+
+  .install {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-left: 3px solid var(--accent);
     border-radius: 4px;
+    padding: 0.9rem 1.15rem;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.95rem;
     overflow-x: auto;
   }
-  a { color: #0a58ca; }
+
+  .install::before {
+    content: "$ ";
+    color: var(--accent);
+    user-select: none;
+  }
+
+  .closer {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  a {
+    color: var(--accent-strong);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    transition: color 0.15s ease;
+  }
+
+  a:hover { color: var(--accent); }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--code-border);
+    color: var(--muted);
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
 </style>
 </head>
 <body>
-<h1>curb</h1>
-<p>A small, HTTPS-only transport utility for the command line. Written in Go, using only the standard library.</p>
 
-<p>curb picks the right behavior based on what the server returns and whether the output is going to a human or a pipe: stream JSON and HTML to stdout, save binaries to disk, vet scripts before piping to a shell.</p>
+<header>
+  <h1>curb</h1>
+  <p class="tagline">A modern HTTPS-only alternative to curl and wget.</p>
+</header>
+
+<p>curb is a transport utility written in Go, using only the standard library, with zero third-party dependencies.</p>
+
+<pre><code>curb https://api.example.com/users          <span class="cmt"># streams JSON to stdout</span>
+curb https://example.com/release.tar.gz     <span class="cmt"># saves to disk</span>
+curb --vet https://get.example.com/sh | sh  <span class="cmt"># vets before piping</span></code></pre>
+
+<p>curb picks the right behavior based on what the server returns and whether the output is going to a human or a pipe. Sensible defaults that match the situation, with flag overrides when you want to be explicit.</p>
 
 <h2>Install</h2>
-<pre><code>go install gocurb.dev/curb@latest</code></pre>
+<div class="install">go install gocurb.dev/curb@latest</div>
+<p class="closer">Small enough to read in one sitting. <a href="https://github.com/33b5e5/curb">Browse the source.</a></p>
 
-<h2>Try it</h2>
-<pre><code>curb https://api.example.com/users
-curb https://example.com/release.tar.gz
-curb --vet https://install.example.com/setup.sh | sh</code></pre>
+<h2>Three modes</h2>
+<ul class="modes">
+  <li><code>--inspect</code> stream textual payloads (JSON, HTML, XML, ...) to stdout. The default for anything that looks like text.</li>
+  <li><code>--download</code> save binaries to disk; stream to stdout on a pipe; <code>-o PATH</code> always takes precedence. The default for anything that doesn't look like text.</li>
+  <li><code>--vet</code> buffer the body, run it through security sieves, emit only on pass. Opt-in; intended for the <code>curl | sh</code> use case.</li>
+</ul>
 
-<h2>Source</h2>
-<p><a href="https://github.com/33b5e5/curb">github.com/33b5e5/curb</a></p>
+<h2>Foundations</h2>
+<ul class="grounds">
+  <li><strong>Memory-safe runtime.</strong> Go. The memory-unsafe failure modes that bite C-based transports don't apply.</li>
+  <li><strong>Standard library only.</strong> The attack surface is whatever ships with the Go toolchain, plus the few hundred lines of curb itself.</li>
+  <li><strong>HTTPS with no escape hatch.</strong> No plaintext fallback, no <code>http://</code>, no carveouts (not even <code>localhost</code>).</li>
+  <li><strong>Opt-in friction on top.</strong> <code>--vet</code> runs the body through pluggable sieves (heuristic checks, trust-on-first-use pinning) before any bytes reach a shell. A friction layer, not a guarantee.</li>
+</ul>
+
+<footer>
+  <span><a href="https://github.com/33b5e5/curb">github.com/33b5e5/curb</a></span>
+  <span>GPLv3</span>
+</footer>
+
 </body>
 </html>

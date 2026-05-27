@@ -1,27 +1,22 @@
 # curb
 
-A modern, HTTPS-only transport utility written in Go, using only the standard library.
+A modern HTTPS-only alternative to curl and wget, written in Go using only the standard library.
 
-## What curb is
+```sh
+curb https://api.example.com/users          # streams JSON to stdout
+curb https://example.com/release.tar.gz     # saves to disk
+curb --vet https://get.example.com/sh | sh  # vets before piping
+```
 
-A small, focused tool for HTTPS transport at the command line, built around the shapes of work modern developers
-actually do: hitting JSON APIs, downloading release artifacts, and (carefully) piping installers to shells.
+curb is built around the shapes of work modern developers actually do: hitting JSON APIs, downloading release artifacts,
+and (carefully) piping installers to shells.
 
-curb picks the right behavior automatically based on two things: what kind of response comes back, and whether the
-output is going to a human or a pipe. The result is fewer flags to remember and sensible defaults that match the
-situation.
-
-Two constraints shape everything:
-
-- **HTTPS only.** No other protocols, no plaintext fallback.
-- **Zero runtime dependencies.** Pure Go standard library.
+curb picks the right behavior automatically based on what the server returns and whether the output is going to a human
+or a pipe. Fewer flags to memorize, sensible defaults that match the situation.
 
 ## Modes
 
-There are currently 3 supported modes; curb automatically picks based on `Content-Type` or by sniffing the first few
-bytes.
-
-The mode can be forced via the following flags:
+Three modes, picked automatically from `Content-Type` or by sniffing the first few bytes. Override with a flag:
 
 - **`--inspect`** stream textual payloads (JSON, HTML, XML, ...) to stdout. The default for anything that looks like
   text.
@@ -29,9 +24,6 @@ The mode can be forced via the following flags:
   anything that doesn't look like text.
 - **`--vet`** buffer the body, run it through security sieves, emit only on pass. Opt-in; intended for the `curl | sh`
   use case.
-
-The mode choice is the heart of curb: instead of remembering `-o` versus no flag, the tool does the right thing for
-what's in front of it.
 
 ## Sieves
 
@@ -43,15 +35,18 @@ what's in front of it.
 - **`tofu`** trust-on-first-use SHA-256 pinning, persisted at `~/.config/curb/known.txt`. `--pin` to accept a change,
   `--no-pin` to skip, `--force` to override any sieve once.
 
-## What curb is not
+## Foundations
 
-curb is **not** a curl replacement. curl is a masterpiece of plumbing that powers huge swaths of the internet,
-maintained under difficult conditions by people doing extraordinary work. curb deliberately covers a small slice of the
-same territory with modern defaults and a tighter focus; it has no ambition to match curl's protocol breadth or feature
-surface.
+- **Memory-safe runtime.** Go. The memory-unsafe failure modes that bite C-based transports don't apply.
+- **Standard library only.** The attack surface is whatever ships with the Go toolchain, plus the few hundred lines of
+  curb itself.
+- **HTTPS with no escape hatch.** No plaintext fallback, no `http://`, no carveouts (not even `localhost`).
+- **Opt-in friction on top.** `--vet` adds the sieves above for the `curl | sh` case.
 
-curb is also not a wget-style downloader. It will save a file when that's clearly what you want, but it does not
-recurse, mirror, resume across runs, or retry indefinitely.
+## Scope
+
+curb covers a small slice of what curl and wget cover, with modern defaults and a tighter focus. No protocol breadth, no
+recursive mirroring, no resume-across-runs, no retry-forever. Different tools for different jobs.
 
 ## Install
 
