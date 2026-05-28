@@ -3,6 +3,14 @@
 Steps to cut a new tagged release. Run from the repo root. Replace `vX.Y.Z` with the target version. The `v` prefix is
 required (Go's module system ignores tags without it).
 
+## One-time setup
+
+Install the release tooling. `gh` and `go` are assumed; `goreleaser` is needed for the artifact build (Phase 1 onward):
+
+```sh
+brew install --cask goreleaser/tap/goreleaser
+```
+
 ## 1. Pre-flight
 
 Working tree clean, HEAD pushed, gh authed to the right repo:
@@ -30,16 +38,30 @@ ecosystem the moment anyone fetches it. Treat this as the point of no return.
 git push origin vX.Y.Z
 ```
 
-## 4. Create the GitHub Release
+## 4. Build and publish the release
+
+goreleaser reads the tag you just pushed (it does not create tags), cross-compiles the four targets, archives them with
+`LICENSE` and `README.md`, writes checksums, and creates the GitHub release with the binaries attached. It needs a
+GitHub token and does *not* reuse `gh`'s stored auth, so bridge it in:
 
 ```sh
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here."
+export GITHUB_TOKEN=$(gh auth token)
+goreleaser release --clean
 ```
 
-Alternatives: `--notes-file path/to/notes.md` reads from disk; omit `--notes` to open `$EDITOR`. `--generate-notes` is
-also available but only useful with a PR-based workflow (it summarizes merged PRs in the compare range; on a
-direct-to-`main` history it just emits a bare compare link). Pair any of these with `--draft` to stage the release for
-review before publishing.
+`.goreleaser.yml` sets `draft: true`, so the result is an unpublished draft. Review it on github.com, replace the
+auto-generated notes (a raw commit list) with real notes, then click Publish.
+
+### What the draft gates
+
+Two independent distribution channels exist, and the draft holds back only one:
+
+- **GitHub release (binaries + notes):** gated by the draft. Nothing is public until you click Publish, and the
+  pre-filled notes are a raw commit dump meant to be overwritten in the GitHub UI first.
+- **`go install` and pkg.go.dev:** *not* gated. Both resolve from the pushed git tag via proxy.golang.org, so
+  `go install gocurb.dev/curb@vX.Y.Z` and the pkg.go.dev listing go live the moment step 3 completes, regardless of the
+  draft. pkg.go.dev renders only source-derived content (synopsis, godoc, version list) and never reads the GitHub
+  release notes, so nothing written there can affect the listing.
 
 ## 5. Verify
 
