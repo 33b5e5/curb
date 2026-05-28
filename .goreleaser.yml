@@ -20,3 +20,16 @@ builds:
 release:
   draft: true
   prerelease: auto
+
+homebrew_casks:
+  - repository:
+      owner: 33b5e5
+      name: homebrew-tap
+    homepage: "https://gocurb.dev"
+    description: "Modern HTTPS-only alternative to curl and wget"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/curb"]
+          end
