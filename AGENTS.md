@@ -47,6 +47,14 @@ to its motivation.
 - Errors to stderr, payload to stdout, progress/metrics to stderr.
 - Prefer `flag` (stdlib) once we need more than one CLI argument; raw `os.Args` for v0.1 since there's exactly one.
 
+## Releases and distribution
+
+Releases are cut with goreleaser using `gomod.proxy: true`, so binaries take their version from the module proxy rather
+than local build state. A single `goreleaser release` builds binaries for macOS and Linux (amd64/arm64), creates the
+GitHub release, and pushes an updated Homebrew cask to the separate `33b5e5/homebrew-tap` repo. See
+[`DEPLOY.md`](DEPLOY.md) for the full process. Users install via `brew install --cask 33b5e5/tap/curb`,
+`go install gocurb.dev/curb@latest`, or a prebuilt binary from the releases page.
+
 ## `docs/` (GitHub Pages)
 
 `docs/index.html` serves two purposes from one file: a minimal human landing page at `https://gocurb.dev/`, and the Go

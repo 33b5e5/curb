@@ -41,8 +41,9 @@ git push origin vX.Y.Z
 ## 4. Build and publish the release
 
 goreleaser reads the tag you just pushed (it does not create tags), cross-compiles the four targets, archives them with
-`LICENSE` and `README.md`, writes checksums, and creates the GitHub release with the binaries attached. It needs a
-GitHub token and does *not* reuse `gh`'s stored auth, so bridge it in:
+`LICENSE` and `README.md`, writes checksums, creates the GitHub release with the binaries attached, and pushes the
+updated Homebrew cask to the `33b5e5/homebrew-tap` repo. It needs a GitHub token and does *not* reuse `gh`'s stored
+auth, so bridge it in:
 
 ```sh
 export GITHUB_TOKEN=$(gh auth token)
@@ -62,6 +63,8 @@ Two independent distribution channels exist, and the draft holds back only one:
   `go install gocurb.dev/curb@vX.Y.Z` and the pkg.go.dev listing go live the moment step 3 completes, regardless of the
   draft. pkg.go.dev renders only source-derived content (synopsis, godoc, version list) and never reads the GitHub
   release notes, so nothing written there can affect the listing.
+- **Homebrew cask:** the cask is pushed to the tap during the release run, but its `url`s point at the release assets,
+  so `brew install --cask 33b5e5/tap/curb` only resolves once you publish the draft.
 
 ## 5. Verify
 
@@ -73,6 +76,24 @@ go install gocurb.dev/curb@vX.Y.Z && ~/go/bin/curb --version
 
 Should print `curb vX.Y.Z` and the Go toolchain that built it. Proxy-sourced builds don't include a `commit` line —
 that's expected (no `.git` in the build environment); the version itself is the identity.
+
+Confirm the published cask too:
+
+```sh
+brew info --cask 33b5e5/tap/curb
+```
+
+Should report the new version, sourced from the tap repo.
+
+## Dry-run (testing `.goreleaser.yml` changes)
+
+`--snapshot` does not work with `gomod.proxy: true` (snapshot disables the proxy, then mishandles the module path). To
+validate a config change, dry-run against an already-published version instead. This builds into `dist/` and writes the
+cask there for inspection, with no remote side effects:
+
+```sh
+GORELEASER_CURRENT_TAG=vX.Y.Z goreleaser release --skip=validate,publish --clean
+```
 
 ## Versioning (pre-1.0)
 

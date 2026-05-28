@@ -50,9 +50,20 @@ recursive mirroring, no resume-across-runs, no retry-forever. Different tools fo
 
 ## Install
 
+Homebrew (macOS):
+
+```sh
+brew install --cask 33b5e5/tap/curb
+```
+
+Go 1.23+:
+
 ```sh
 go install gocurb.dev/curb@latest
 ```
+
+Prebuilt binaries for macOS and Linux (amd64 and arm64) are attached to each
+[release](https://github.com/33b5e5/curb/releases).
 
 ## License
 

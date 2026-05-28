@@ -73,7 +73,7 @@
   }
 
   h2 {
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.1em;
@@ -166,12 +166,19 @@
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 0.95rem;
     overflow-x: auto;
+    margin: 0 0 0.5rem;
   }
 
   .install::before {
     content: "$ ";
     color: var(--accent);
     user-select: none;
+  }
+
+  .or {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--muted);
   }
 
   .closer {
@@ -218,8 +225,10 @@ curb --vet https://get.example.com/sh | sh  <span class="cmt"># vets before pipi
 <p>curb picks the right behavior based on what the server returns and whether the output is going to a human or a pipe. Sensible defaults that match the situation, with flag overrides when you want to be explicit.</p>
 
 <h2>Install</h2>
+<div class="install">brew install --cask 33b5e5/tap/curb</div>
+<p class="or">or</p>
 <div class="install">go install gocurb.dev/curb@latest</div>
-<p class="closer">Small enough to read in one sitting. <a href="https://github.com/33b5e5/curb">Browse the source.</a></p>
+<p class="closer">(Or grab a <a href="https://github.com/33b5e5/curb/releases">prebuilt binary</a> for macOS or Linux.)</p>
 
 <h2>Three modes</h2>
 <ul class="modes">
