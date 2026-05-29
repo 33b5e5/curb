@@ -77,7 +77,7 @@ func main() {
 	flag.BoolVar(&ipv4Only, "4", false, "force IPv4 resolution")
 	flag.BoolVar(&ipv6Only, "6", false, "force IPv6 resolution")
 	flag.BoolVar(&showVersion, "version", false, "print version info and exit")
-	flag.DurationVar(&timeout, "timeout", 0, "overall request deadline (e.g. 45s, 2m), 0 to disable; default 30s in --vet, none otherwise")
+	flag.DurationVar(&timeout, "timeout", 0, "overall request deadline (e.g. 45s, 2m), 0 to disable; default 60s in --vet, none otherwise")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
 		flag.PrintDefaults()
@@ -233,7 +233,10 @@ func newClient(network string) *http.Client {
 // user hasn't set --timeout. vet buffers an attacker-influenceable body (capped
 // by maxVetBytes), so an endless trickle should fail rather than hang. Streaming
 // modes stay uncapped by default so long or open-ended transfers aren't cut off.
-const defaultVetTimeout = 30 * time.Second
+// It is set above the 30s response-header timeout so the body-read phase gets its
+// own headroom, and kept generous since the cost of cutting off a slow but valid
+// fetch outweighs making a (Ctrl-C-able, size-capped) hostile trickle wait longer.
+const defaultVetTimeout = 60 * time.Second
 
 // resolveTimeout picks the overall request deadline (0 means no deadline). An
 // explicit --timeout wins for every mode; otherwise only vet mode gets a
