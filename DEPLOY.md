@@ -5,7 +5,8 @@ required (Go's module system ignores tags without it).
 
 ## One-time setup
 
-Install the build and release tooling. `gh` is mostly used to manage issues on GitHub, but the auth token is reused by goreleaser.
+Install the build and release tooling. `gh` is mostly used to manage issues on GitHub, but the auth token is reused by
+goreleaser.
 
 ```sh
 brew install go
