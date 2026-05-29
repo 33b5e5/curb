@@ -43,6 +43,9 @@ type config struct {
 	stdoutIsTTY bool
 	stderrIsTTY bool
 
+	// timeout is the overall request deadline; 0 means no deadline.
+	timeout time.Duration
+
 	// --vet options.
 	forcePin bool
 	noPin    bool
@@ -62,6 +65,7 @@ func main() {
 		ipv4Only      bool
 		ipv6Only      bool
 		showVersion   bool
+		timeout       time.Duration
 	)
 	flag.StringVar(&outPath, "o", "", "write payload to PATH (implies --download)")
 	flag.BoolVar(&forceInspect, "inspect", false, "force inspection mode (stream to stdout)")
@@ -73,6 +77,7 @@ func main() {
 	flag.BoolVar(&ipv4Only, "4", false, "force IPv4 resolution")
 	flag.BoolVar(&ipv6Only, "6", false, "force IPv6 resolution")
 	flag.BoolVar(&showVersion, "version", false, "print version info and exit")
+	flag.DurationVar(&timeout, "timeout", 0, "overall request deadline (e.g. 45s, 2m), 0 to disable; default 30s in --vet, none otherwise")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: curb [flags] <https-url>")
 		flag.PrintDefaults()
@@ -103,6 +108,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "curb:", err)
 		os.Exit(2)
 	}
+	if timeout < 0 {
+		fmt.Fprintln(os.Stderr, "curb: --timeout must not be negative")
+		os.Exit(2)
+	}
+	timeoutSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "timeout" {
+			timeoutSet = true
+		}
+	})
 
 	cfg := config{
 		outPath:     outPath,
@@ -111,6 +126,7 @@ func main() {
 		stderr:      os.Stderr,
 		stdoutIsTTY: isTerminal(os.Stdout),
 		stderrIsTTY: isTerminal(os.Stderr),
+		timeout:     resolveTimeout(timeout, timeoutSet, forced),
 		forcePin:    forcePin,
 		noPin:       noPin,
 		force:       force,
@@ -181,21 +197,56 @@ func buildSieves(cfg config) ([]Sieve, error) {
 	return sieves, nil
 }
 
+// Transport-level stall timeouts bound how long a slow or hostile server can
+// hold a connection open at each phase (connect, TLS handshake, waiting for
+// response headers) without capping total transfer time, so they are safe for
+// streaming inspect/download. The overall body deadline is separate; see
+// resolveTimeout.
+const (
+	dialTimeout           = 30 * time.Second
+	tlsHandshakeTimeout   = 10 * time.Second
+	responseHeaderTimeout = 30 * time.Second
+	idleConnTimeout       = 90 * time.Second
+)
+
 func newClient(network string) *http.Client {
+	// A timeout-bearing dialer is wired in for every network, not just the
+	// forced -4/-6 case: a bare http.Transport leaves DialContext nil, which
+	// dials through a zero net.Dialer with no connect timeout at all.
+	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-	}
-	if network != "tcp" {
-		// Mirror net/http's default dialer timings; only the network is forced.
-		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
-		transport.DialContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		IdleConnTimeout:       idleConnTimeout,
+		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
 			return dialer.DialContext(ctx, network, addr)
-		}
+		},
 	}
 	return &http.Client{
 		Transport:     transport,
 		CheckRedirect: checkRedirect,
 	}
+}
+
+// defaultVetTimeout is the overall request deadline applied in vet mode when the
+// user hasn't set --timeout. vet buffers an attacker-influenceable body (capped
+// by maxVetBytes), so an endless trickle should fail rather than hang. Streaming
+// modes stay uncapped by default so long or open-ended transfers aren't cut off.
+const defaultVetTimeout = 30 * time.Second
+
+// resolveTimeout picks the overall request deadline (0 means no deadline). An
+// explicit --timeout wins for every mode; otherwise only vet mode gets a
+// default, since inspect and download stream and may run arbitrarily long by
+// design.
+func resolveTimeout(flagVal time.Duration, set bool, m mode) time.Duration {
+	if set {
+		return flagVal
+	}
+	if m == modeVet {
+		return defaultVetTimeout
+	}
+	return 0
 }
 
 // selectNetwork resolves -4 / -6 into the network string passed to net.Dialer.
@@ -229,7 +280,17 @@ func run(client *http.Client, cfg config, raw string) error {
 	if u.Scheme != "https" {
 		return fmt.Errorf("only https:// URLs are supported, got %q", u.Scheme)
 	}
-	resp, err := client.Get(u.String())
+	ctx := context.Background()
+	if cfg.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cfg.timeout)
+		defer cancel()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
