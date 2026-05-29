@@ -210,9 +210,11 @@ const (
 )
 
 func newClient(network string) *http.Client {
-	// A timeout-bearing dialer is wired in for every network, not just the
-	// forced -4/-6 case: a bare http.Transport leaves DialContext nil, which
-	// dials through a zero net.Dialer with no connect timeout at all.
+	// Dial through a dialer with a connect timeout. With DialContext unset,
+	// http.Transport falls back to a zero net.Dialer that never times out, so we
+	// always supply our own. The network string is all that varies: "tcp" lets
+	// the resolver choose the IP version, -4/-6 force tcp4/tcp6; the timeout is
+	// the same in every case.
 	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},

@@ -422,19 +422,19 @@ func TestNewClient_ForcedIPv4Succeeds(t *testing.T) {
 }
 
 func TestNewClient_WiresStallTimeouts(t *testing.T) {
-	// The connect timeout must apply on the default path too, not only under
-	// -4/-6: a bare transport leaves DialContext nil and would dial with no
-	// timeout. The TLS-handshake and response-header timeouts guard the other
-	// stall phases.
-	tr := newClient("tcp").Transport.(*http.Transport)
-	if tr.DialContext == nil {
-		t.Error("DialContext should be set so the default path has a connect timeout")
-	}
-	if tr.TLSHandshakeTimeout == 0 {
-		t.Error("TLSHandshakeTimeout should be set")
-	}
-	if tr.ResponseHeaderTimeout == 0 {
-		t.Error("ResponseHeaderTimeout should be set")
+	// Every network gets a connect timeout (via DialContext), a TLS-handshake
+	// timeout, and a response-header timeout; none of them depends on -4/-6.
+	for _, network := range []string{"tcp", "tcp4", "tcp6"} {
+		tr := newClient(network).Transport.(*http.Transport)
+		if tr.DialContext == nil {
+			t.Errorf("%s: DialContext should be set so the connect timeout applies", network)
+		}
+		if tr.TLSHandshakeTimeout == 0 {
+			t.Errorf("%s: TLSHandshakeTimeout should be set", network)
+		}
+		if tr.ResponseHeaderTimeout == 0 {
+			t.Errorf("%s: ResponseHeaderTimeout should be set", network)
+		}
 	}
 }
 
