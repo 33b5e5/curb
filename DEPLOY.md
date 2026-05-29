@@ -5,9 +5,12 @@ required (Go's module system ignores tags without it).
 
 ## One-time setup
 
-Install the release tooling. `gh` and `go` are assumed; `goreleaser` is needed for the artifact build (Phase 1 onward):
+Install the build and release tooling. `gh` is mostly used to manage issues on GitHub, but the auth token is reused by goreleaser.
 
 ```sh
+brew install go
+brew install gh
+gh auth login
 brew install --cask goreleaser/tap/goreleaser
 ```
 
