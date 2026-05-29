@@ -185,3 +185,48 @@ func TestVet_ForcePipesAndWarns(t *testing.T) {
 		t.Errorf("forced warning should not include next-steps footer: %q", stderr.String())
 	}
 }
+
+// infiniteReader yields an endless stream of bytes. vet must stop reading at
+// the cap rather than buffer until OOM (the decompression-bomb scenario, where
+// resp.Body is already gunzipped so the bytes vet sees are the expanded ones).
+type infiniteReader struct{}
+
+func (infiniteReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'a'
+	}
+	return len(p), nil
+}
+
+func TestVet_CapsOversizeBody(t *testing.T) {
+	var stdout bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: io.Discard}
+	err := vet(infiniteReader{}, metaFor("https://example.com/install.sh"),
+		[]Sieve{passSieve{}}, cfg)
+	if err == nil {
+		t.Fatal("expected a cap error on an oversize body")
+	}
+	if !strings.Contains(err.Error(), "cap") {
+		t.Errorf("error should mention the cap, got %v", err)
+	}
+	for _, want := range []string{"--inspect", "--download"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should advise %s, got %v", want, err)
+		}
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("oversize body must not be emitted, got %d bytes", stdout.Len())
+	}
+}
+
+func TestVet_AtLimitBodyPasses(t *testing.T) {
+	var stdout bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: io.Discard}
+	body := strings.NewReader(strings.Repeat("a", maxVetBytes))
+	if err := vet(body, metaFor("https://example.com/s"), []Sieve{passSieve{}}, cfg); err != nil {
+		t.Fatalf("a body exactly at the cap should pass, got %v", err)
+	}
+	if stdout.Len() != maxVetBytes {
+		t.Errorf("emitted %d bytes, want %d", stdout.Len(), maxVetBytes)
+	}
+}
