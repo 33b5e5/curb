@@ -59,13 +59,26 @@ type sieveHit struct {
 	v    Verdict
 }
 
+// maxVetBytes caps how much of a response vet will buffer. vet is the only
+// buffering mode, and it targets attacker-influenceable curl|sh URLs, so the
+// cap sits above net/http's transparent gunzip layer: it bounds decompressed
+// bytes regardless of Content-Encoding, which defeats decompression bombs.
+// Shell installers run to tens of KB; 8 MiB is generous headroom. Larger
+// payloads belong in --inspect or --download, which stream rather than buffer.
+const maxVetBytes = 8 << 20 // 8 MiB
+
 // vet buffers the body, runs it through sieves, and emits only if all pass.
 // With cfg.force, sieve blocks become warnings on stderr and the body is piped
 // anyway.
 func vet(body io.Reader, meta SieveMeta, sieves []Sieve, cfg config) error {
-	buf, err := io.ReadAll(body)
+	// Read one byte past the ceiling so an exactly-at-limit body still passes
+	// but an over-limit one is detectable after LimitReader's silent truncation.
+	buf, err := io.ReadAll(io.LimitReader(body, maxVetBytes+1))
 	if err != nil {
 		return err
+	}
+	if len(buf) > maxVetBytes {
+		return fmt.Errorf("vet body exceeds the %d MiB cap; re-run with --inspect or --download for large payloads", maxVetBytes>>20)
 	}
 	var hits []sieveHit
 	for _, s := range sieves {
