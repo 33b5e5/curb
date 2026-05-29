@@ -1,7 +1,10 @@
-# curb — agent guidance
+# curb: agent guidance
 
 `curb` is a modern, HTTPS-only transport utility written in Go. The repo is public on GitHub and published to pkg.go.dev
 with a tagged release.
+
+Read [`README.md`](README.md) at the start of a session too: it is the user-facing description of shipped behavior, and
+should be kept accurate alongside this file as the project evolves.
 
 ## Hard constraints
 
@@ -18,10 +21,10 @@ with a tagged release.
 - No punching down at curl or other tools. curl is a masterpiece of plumbing maintained under difficult conditions. curb
   is a minimalist alternative.
 
-## Architecture (planned)
+## Architecture
 
 - Three runtime modes, picked from `Content-Type` with magic-byte sniff fallback and override flags:
-  - **inspect:** stream JSON/HTML/XML/etc to stdout. The only mode in v0.1.
+  - **inspect:** stream JSON/HTML/XML/etc to stdout.
   - **download:** auto-save on TTY, stream on pipe, `-o` always wins.
   - **vet:** buffer the body, validate, emit only on pass. Intended for the `curl | sh` use case.
 - **Modular sieves** (Go interface, compiled-in) drive `vet` validation. TOFU pinning and heuristic checks are sieves;
@@ -45,7 +48,7 @@ to its motivation.
 
 - Exit codes: `0` success, `1` runtime error, `2` usage error.
 - Errors to stderr, payload to stdout, progress/metrics to stderr.
-- Prefer `flag` (stdlib) once we need more than one CLI argument; raw `os.Args` for v0.1 since there's exactly one.
+- Use `flag` (stdlib) for argument parsing.
 
 ## Releases and distribution
 
@@ -58,7 +61,7 @@ GitHub release, and pushes an updated Homebrew cask to the separate `33b5e5/home
 ## `docs/` (GitHub Pages)
 
 `docs/index.html` serves two purposes from one file: a minimal human landing page at `https://gocurb.dev/`, and the Go
-vanity-import resolver via the `<meta name="go-import">` tag — that tag is what makes `go install gocurb.dev@latest`
+vanity-import resolver via the `<meta name="go-import">` tag, which is what makes `go install gocurb.dev@latest`
 find the GitHub repo. Don't remove it. `docs/CNAME` is GitHub Pages' custom-domain marker.
 
 ## Site posture (`gocurb.dev` on GitHub Pages)
