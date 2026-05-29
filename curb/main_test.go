@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func bufCfg(buf *bytes.Buffer) config {
@@ -420,12 +421,62 @@ func TestNewClient_ForcedIPv4Succeeds(t *testing.T) {
 	}
 }
 
-func TestNewClient_DefaultLeavesDialerAlone(t *testing.T) {
-	// Sanity: when network is "tcp", DialContext stays nil so net/http uses its
-	// own default dialer (preserving prior behavior).
-	c := newClient("tcp")
-	if c.Transport.(*http.Transport).DialContext != nil {
-		t.Errorf("expected nil DialContext for default network, got non-nil")
+func TestNewClient_WiresStallTimeouts(t *testing.T) {
+	// The connect timeout must apply on the default path too, not only under
+	// -4/-6: a bare transport leaves DialContext nil and would dial with no
+	// timeout. The TLS-handshake and response-header timeouts guard the other
+	// stall phases.
+	tr := newClient("tcp").Transport.(*http.Transport)
+	if tr.DialContext == nil {
+		t.Error("DialContext should be set so the default path has a connect timeout")
+	}
+	if tr.TLSHandshakeTimeout == 0 {
+		t.Error("TLSHandshakeTimeout should be set")
+	}
+	if tr.ResponseHeaderTimeout == 0 {
+		t.Error("ResponseHeaderTimeout should be set")
+	}
+}
+
+func TestResolveTimeout(t *testing.T) {
+	cases := []struct {
+		name    string
+		flagVal time.Duration
+		set     bool
+		mode    mode
+		want    time.Duration
+	}{
+		{"vet default", 0, false, modeVet, defaultVetTimeout},
+		{"inspect no default", 0, false, modeInspect, 0},
+		{"download no default", 0, false, modeDownload, 0},
+		{"auto no default", 0, false, modeAuto, 0},
+		{"explicit overrides vet default", 5 * time.Second, true, modeVet, 5 * time.Second},
+		{"explicit applies to inspect", 5 * time.Second, true, modeInspect, 5 * time.Second},
+		{"explicit zero disables vet default", 0, true, modeVet, 0},
+	}
+	for _, c := range cases {
+		if got := resolveTimeout(c.flagVal, c.set, c.mode); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRun_OverallTimeoutFires(t *testing.T) {
+	// Server sends headers, then stalls the body forever. Only the overall
+	// deadline (not the header timeout) can break this; cfg.timeout must fire.
+	release := make(chan struct{})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	cfg := config{forcedMode: modeInspect, stdout: io.Discard, stderr: io.Discard, timeout: 100 * time.Millisecond}
+	if err := run(srv.Client(), cfg, srv.URL); err == nil {
+		t.Fatal("expected an overall-timeout error, got nil")
 	}
 }
 
