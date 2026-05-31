@@ -25,7 +25,7 @@ Only the most recent tagged release receives security updates.
 
 **Out of scope:**
 
-- Sieve bypasses (`heuristic`, `nonempty`, `tofu`). These are friction layers and smell tests — false negatives are
+- Sieve bypasses (`heuristic`, `nonempty`, `tofu`). These are friction layers and smell tests; false negatives are
   expected by design. See the [README](README.md) for honest framing on what sieves do and don't guarantee.
 - Issues that require the attacker to already have the same user privileges as the curb invocation (e.g., the ability to
   write the user's own config files or replace the binary). Cross-user attacks and privilege-escalation paths remain in

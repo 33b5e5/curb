@@ -78,8 +78,8 @@ End-to-end check via the module proxy:
 go install gocurb.dev/curb@vX.Y.Z && ~/go/bin/curb --version
 ```
 
-Should print `curb vX.Y.Z` and the Go toolchain that built it. Proxy-sourced builds don't include a `commit` line —
-that's expected (no `.git` in the build environment); the version itself is the identity.
+Should print `curb vX.Y.Z` and the Go toolchain that built it. Proxy-sourced builds don't include a `commit` line, which
+is expected (no `.git` in the build environment); the version itself is the identity.
 
 Confirm the published cask too:
 

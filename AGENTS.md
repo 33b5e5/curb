@@ -61,8 +61,8 @@ GitHub release, and pushes an updated Homebrew cask to the separate `33b5e5/home
 ## `docs/` (GitHub Pages)
 
 `docs/index.html` serves two purposes from one file: a minimal human landing page at `https://gocurb.dev/`, and the Go
-vanity-import resolver via the `<meta name="go-import">` tag, which is what makes `go install gocurb.dev@latest`
-find the GitHub repo. Don't remove it. `docs/CNAME` is GitHub Pages' custom-domain marker.
+vanity-import resolver via the `<meta name="go-import">` tag, which is what makes `go install gocurb.dev@latest` find
+the GitHub repo. Don't remove it. `docs/CNAME` is GitHub Pages' custom-domain marker.
 
 ## Site posture (`gocurb.dev` on GitHub Pages)
 
