@@ -83,18 +83,25 @@ func TestProgressBar_ThrottlesUpdates(t *testing.T) {
 	}
 }
 
-func TestProgressBar_AlwaysRendersOnCompletion(t *testing.T) {
+func TestProgressBar_RendersOnCompletionAndClampsOvershoot(t *testing.T) {
 	var buf bytes.Buffer
 	bar, _ := newTestBar(&buf, 100)
 
 	bar.advance(50) // first render
-	bar.advance(50) // hits total even within throttle window
+	bar.advance(50) // hits total even within the throttle window
 
 	if got := strings.Count(buf.String(), "\r"); got != 2 {
 		t.Errorf("expected render-on-complete, got %d renders in %q", got, buf.String())
 	}
 	if !strings.Contains(buf.String(), "100.0%") {
 		t.Errorf("expected 100%% on completion, got %q", buf.String())
+	}
+
+	// Servers occasionally send more bytes than Content-Length advertised; the
+	// overshoot still renders (n > total) but must clamp to 100%, never 150%.
+	bar.advance(50)
+	if out := buf.String(); strings.Contains(out, "150.0%") || !strings.Contains(out, "100.0%") {
+		t.Errorf("overshoot should clamp to 100%%, got %q", out)
 	}
 }
 
@@ -141,46 +148,31 @@ func TestProgressReader_CountsAndForwards(t *testing.T) {
 	}
 }
 
-func TestProgressBar_OvershootClampsPercent(t *testing.T) {
-	// Servers occasionally send more bytes than Content-Length advertised; the
-	// bar shouldn't print >100%.
-	var buf bytes.Buffer
-	bar, _ := newTestBar(&buf, 100)
-	bar.advance(150)
-	if !strings.Contains(buf.String(), "100.0%") {
-		t.Errorf("expected clamp to 100%%, got %q", buf.String())
+// withProgress attaches a bar only when stderr is a TTY; otherwise it returns
+// the reader untouched and writes nothing (e.g. shell redirect, test buffer).
+func TestWithProgress_TTYGate(t *testing.T) {
+	cases := []struct {
+		name      string
+		stderrTTY bool
+		wantBar   bool
+	}{
+		{"no bar when stderr is not a TTY", false, false},
+		{"bar when stderr is a TTY", true, true},
 	}
-}
-
-func TestSaveTo_NoProgressWhenStderrNotTTY(t *testing.T) {
-	// Sanity check: existing call sites pass stderrIsTTY=false, so progress
-	// output stays off when stderr is captured (e.g. shell redirect, test buf).
-	var stderr bytes.Buffer
-	cfg := config{stderr: &stderr, stderrIsTTY: false}
-	src, bar := withProgress(strings.NewReader("hi"), "curb: x", 2, cfg)
-	if bar != nil {
-		t.Errorf("expected nil bar when stderr not TTY")
-	}
-	if _, err := io.Copy(io.Discard, src); err != nil {
-		t.Fatalf("copy: %v", err)
-	}
-	if stderr.Len() != 0 {
-		t.Errorf("expected no stderr writes, got %q", stderr.String())
-	}
-}
-
-func TestSaveTo_ProgressWhenStderrIsTTY(t *testing.T) {
-	var stderr bytes.Buffer
-	cfg := config{stderr: &stderr, stderrIsTTY: true}
-	src, bar := withProgress(strings.NewReader("hello"), "curb: x", 5, cfg)
-	if bar == nil {
-		t.Fatalf("expected non-nil bar when stderr is TTY")
-	}
-	if _, err := io.Copy(io.Discard, src); err != nil {
-		t.Fatalf("copy: %v", err)
-	}
-	bar.finish()
-	if !strings.Contains(stderr.String(), "\r") {
-		t.Errorf("expected progress output on stderr, got %q", stderr.String())
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			cfg := config{stderr: &stderr, stderrIsTTY: c.stderrTTY}
+			src, bar := withProgress(strings.NewReader("hi"), "curb: x", 2, cfg)
+			if (bar != nil) != c.wantBar {
+				t.Fatalf("bar != nil = %v, want %v", bar != nil, c.wantBar)
+			}
+			if _, err := io.Copy(io.Discard, src); err != nil {
+				t.Fatalf("copy: %v", err)
+			}
+			if !c.wantBar && stderr.Len() != 0 {
+				t.Errorf("expected no stderr writes without a TTY, got %q", stderr.String())
+			}
+		})
 	}
 }

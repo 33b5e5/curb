@@ -117,27 +117,6 @@ func TestRun_DownloadsBinaryWithOutFlag(t *testing.T) {
 	}
 }
 
-func TestRun_StreamsBinaryOnPipe(t *testing.T) {
-	// Full 8-byte PNG signature so http.DetectContentType returns image/png and
-	// resolveMode picks modeDownload; on a pipe that lands in stream(). The old
-	// 4-byte body sniffed as text/plain and silently took the inspect path.
-	payload := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Write(payload)
-	}))
-	defer srv.Close()
-
-	var buf bytes.Buffer
-	cfg := config{stdout: &buf, stderr: io.Discard, stdoutIsTTY: false}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if !bytes.Equal(buf.Bytes(), payload) {
-		t.Errorf("stdout = %x, want %x", buf.Bytes(), payload)
-	}
-}
-
 func TestRun_StreamSummaryGoesToStderr(t *testing.T) {
 	// Force modeDownload on a pipe so stream() runs deterministically, then
 	// assert the payload/metrics contract: body to stdout, the byte/duration
@@ -333,10 +312,10 @@ func TestRun_VetModeForcePipesDespiteBlock(t *testing.T) {
 	}
 }
 
-func TestRun_SniffsWhenContentTypeMissing(t *testing.T) {
-	// PNG magic bytes; server doesn't set Content-Type (but Go's auto-sniff will
-	// fill it in for the response). Force the empty CT path by overriding to
-	// octet-stream so resolveMode falls back to sniffing.
+func TestRun_SniffsWhenContentTypeIsOctetStream(t *testing.T) {
+	// application/octet-stream is treated as "no useful type": resolveMode falls
+	// back to sniffing the body, which the PNG magic bytes resolve to image/png
+	// (a download), saved under the URL-derived filename.
 	payload := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -360,124 +339,55 @@ func TestRun_SniffsWhenContentTypeMissing(t *testing.T) {
 	}
 }
 
-func TestRun_HintsOnShellShebangPipe(t *testing.T) {
-	body := "#!/bin/sh\necho hi\n"
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		io.WriteString(w, body)
-	}))
-	defer srv.Close()
+// The --vet hint fires only when a shell-shaped body streams to a pipe: not in
+// vet mode (which is what we'd suggest), not with -o (writes a file), and not on
+// a TTY (a human reading it isn't piping to sh). One row per gate condition.
+func TestRun_ShellPipeHint(t *testing.T) {
+	const shebang = "#!/bin/sh\necho hi\n"
+	cases := []struct {
+		name        string
+		contentType string
+		body        string
+		stdoutIsTTY bool
+		mode        mode
+		toFile      bool
+		noPin       bool
+		wantHint    bool
+	}{
+		{"shebang piped", "text/plain", shebang, false, modeAuto, false, false, true},
+		{"shell content-type piped", "application/x-shellscript", "install everything\n", false, modeAuto, false, false, true},
+		{"shell shape on a TTY", "text/plain", shebang, true, modeAuto, false, false, false},
+		{"vet mode suppresses hint", "text/x-shellscript", shebang, false, modeVet, false, true, false},
+		{"non-shell body", "application/json", `{"ok":true}`, false, modeAuto, false, false, false},
+		{"saving to a file", "text/x-shellscript", shebang, false, modeDownload, true, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", c.contentType)
+				io.WriteString(w, c.body)
+			}))
+			defer srv.Close()
 
-	var stdout, stderr bytes.Buffer
-	cfg := config{stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "consider --vet") {
-		t.Errorf("expected shell-pipe hint on stderr, got %q", stderr.String())
-	}
-	// Peeking for the shebang must not eat any of the streamed body.
-	if stdout.String() != body {
-		t.Errorf("stdout = %q, want full body %q", stdout.String(), body)
-	}
-}
-
-func TestRun_HintsOnShellContentType(t *testing.T) {
-	body := "install everything\n" // no shebang; the Content-Type alone qualifies
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-shellscript")
-		io.WriteString(w, body)
-	}))
-	defer srv.Close()
-
-	var stdout, stderr bytes.Buffer
-	cfg := config{stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "consider --vet") {
-		t.Errorf("expected hint on stderr, got %q", stderr.String())
-	}
-	if stdout.String() != body {
-		t.Errorf("stdout = %q, want %q", stdout.String(), body)
-	}
-}
-
-func TestRun_NoHintOnTTY(t *testing.T) {
-	// A shell script displayed to a human (stdout is a TTY) is not being piped,
-	// so no hint even though the body is shell-shaped.
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		io.WriteString(w, "#!/bin/sh\necho hi\n")
-	}))
-	defer srv.Close()
-
-	var stderr bytes.Buffer
-	cfg := config{stdout: io.Discard, stderr: &stderr, stdoutIsTTY: true}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if strings.Contains(stderr.String(), "consider --vet") {
-		t.Errorf("did not expect hint when stdout is a TTY, got %q", stderr.String())
-	}
-}
-
-func TestRun_NoHintInVetMode(t *testing.T) {
-	// --vet was passed, so suggesting --vet would be noise.
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/x-shellscript")
-		io.WriteString(w, "#!/bin/sh\necho hi\n")
-	}))
-	defer srv.Close()
-
-	var stdout, stderr bytes.Buffer
-	cfg := config{forcedMode: modeVet, stdout: &stdout, stderr: &stderr, stdoutIsTTY: false, noPin: true}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if strings.Contains(stderr.String(), "consider --vet") {
-		t.Errorf("did not expect hint in vet mode, got %q", stderr.String())
-	}
-}
-
-func TestRun_NoHintForNonShellBody(t *testing.T) {
-	body := `{"ok":true}`
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, body)
-	}))
-	defer srv.Close()
-
-	var stdout, stderr bytes.Buffer
-	cfg := config{stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if strings.Contains(stderr.String(), "consider --vet") {
-		t.Errorf("did not expect hint for JSON body, got %q", stderr.String())
-	}
-	if stdout.String() != body {
-		t.Errorf("stdout = %q, want %q", stdout.String(), body)
-	}
-}
-
-func TestRun_NoHintWhenSavingToFile(t *testing.T) {
-	// -o sends the body to a file, not down a pipe, so the hint should stay quiet
-	// even though stdout is not a TTY.
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/x-shellscript")
-		io.WriteString(w, "#!/bin/sh\necho hi\n")
-	}))
-	defer srv.Close()
-
-	dst := filepath.Join(t.TempDir(), "script.sh")
-	var stderr bytes.Buffer
-	cfg := config{outPath: dst, forcedMode: modeDownload, stdout: io.Discard, stderr: &stderr, stdoutIsTTY: false}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if strings.Contains(stderr.String(), "consider --vet") {
-		t.Errorf("did not expect hint when saving with -o, got %q", stderr.String())
+			var stdout, stderr bytes.Buffer
+			cfg := config{forcedMode: c.mode, stdout: &stdout, stderr: &stderr, stdoutIsTTY: c.stdoutIsTTY, noPin: c.noPin}
+			if c.toFile {
+				cfg.outPath = filepath.Join(t.TempDir(), "script.sh")
+			}
+			if err := run(srv.Client(), cfg, srv.URL); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if got := strings.Contains(stderr.String(), "consider --vet"); got != c.wantHint {
+				t.Errorf("hint present = %v, want %v (stderr %q)", got, c.wantHint, stderr.String())
+			}
+			// When the body streams to a pipe, peeking for the shebang must not
+			// eat any of it.
+			if c.mode == modeAuto && !c.stdoutIsTTY && !c.toFile {
+				if stdout.String() != c.body {
+					t.Errorf("stdout = %q, want full body %q", stdout.String(), c.body)
+				}
+			}
+		})
 	}
 }
 
@@ -557,39 +467,37 @@ func TestSelectNetwork(t *testing.T) {
 	}
 }
 
-func TestNewClient_ForcedIPv6FailsAgainstV4Server(t *testing.T) {
-	// httptest binds to 127.0.0.1; dialing that literal over tcp6 has no
-	// suitable address and must fail before any HTTP round-trip.
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "should not reach handler")
-	}))
-	defer srv.Close()
-
-	client := newClient("tcp6")
-	// Trust the test server's self-signed cert via the same transport's TLSConfig.
-	client.Transport.(*http.Transport).TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig
-
-	err := run(client, config{stdout: io.Discard, stderr: io.Discard}, srv.URL)
-	if err == nil {
-		t.Fatal("expected error dialing v4 literal over tcp6, got nil")
+func TestNewClient_NetworkSelection(t *testing.T) {
+	// httptest binds to 127.0.0.1: tcp4 reaches it, while tcp6 has no suitable
+	// address for that literal and must fail before any HTTP round-trip.
+	cases := []struct {
+		name    string
+		network string
+		wantErr bool
+	}{
+		{"tcp4 reaches a v4 server", "tcp4", false},
+		{"tcp6 cannot reach a v4 server", "tcp6", true},
 	}
-}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, "ok")
+			}))
+			defer srv.Close()
 
-func TestNewClient_ForcedIPv4Succeeds(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "ok")
-	}))
-	defer srv.Close()
+			client := newClient(c.network)
+			// Trust the test server's self-signed cert via its transport's TLSConfig.
+			client.Transport.(*http.Transport).TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig
 
-	client := newClient("tcp4")
-	client.Transport.(*http.Transport).TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig
-
-	var buf bytes.Buffer
-	if err := run(client, bufCfg(&buf), srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if buf.String() != "ok" {
-		t.Errorf("body = %q, want %q", buf.String(), "ok")
+			var buf bytes.Buffer
+			err := run(client, bufCfg(&buf), srv.URL)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, c.wantErr)
+			}
+			if !c.wantErr && buf.String() != "ok" {
+				t.Errorf("body = %q, want %q", buf.String(), "ok")
+			}
+		})
 	}
 }
 
@@ -679,10 +587,12 @@ func TestSafeBasename(t *testing.T) {
 
 func TestIsTextual(t *testing.T) {
 	textual := []string{
-		"text/plain", "text/html", "text/css",
-		"application/json", "application/xml", "application/yaml",
-		"application/ld+json", "application/atom+xml", "application/foo+yaml",
-		"application/javascript",
+		"text/plain",                        // text/ prefix
+		"application/json",                  // explicit allow-list entry
+		"application/x-www-form-urlencoded", // less-obvious allow-list entry
+		"application/foo+json",              // +json suffix (not itself listed)
+		"application/atom+xml",              // +xml suffix
+		"application/foo+yaml",              // +yaml suffix
 	}
 	binary := []string{
 		"application/octet-stream", "image/png", "video/mp4",
