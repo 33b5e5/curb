@@ -34,7 +34,7 @@ func TestTofuSieve_FirstUsePinsAndPasses(t *testing.T) {
 	if v.Block {
 		t.Fatalf("expected pass on first use, got block: %s", v.Reason)
 	}
-	got, err := loadPin(path, u.String())
+	got, err := loadPin(path, tofuKey(u))
 	if err != nil {
 		t.Fatalf("loadPin: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestTofuSieve_FirstUsePinsAndPasses(t *testing.T) {
 func TestTofuSieve_MatchingHashPasses(t *testing.T) {
 	path := tofuTempPath(t)
 	u, _ := url.Parse("https://example.com/install.sh")
-	if err := savePin(path, u.String(), sha256hex("echo hi")); err != nil {
+	if err := savePin(path, tofuKey(u), sha256hex("echo hi")); err != nil {
 		t.Fatal(err)
 	}
 	s := tofuSieve{path: path, stderr: io.Discard}
@@ -62,7 +62,7 @@ func TestTofuSieve_MatchingHashPasses(t *testing.T) {
 func TestTofuSieve_MismatchBlocks(t *testing.T) {
 	path := tofuTempPath(t)
 	u, _ := url.Parse("https://example.com/install.sh")
-	if err := savePin(path, u.String(), sha256hex("echo old")); err != nil {
+	if err := savePin(path, tofuKey(u), sha256hex("echo old")); err != nil {
 		t.Fatal(err)
 	}
 	s := tofuSieve{path: path, stderr: io.Discard}
@@ -73,8 +73,8 @@ func TestTofuSieve_MismatchBlocks(t *testing.T) {
 	if !strings.Contains(v.Reason, "changed") {
 		t.Errorf("reason = %q, want it to mention 'changed'", v.Reason)
 	}
-	if !strings.Contains(v.Hint, "--pin") || !strings.Contains(v.Hint, u.String()) {
-		t.Errorf("hint should suggest --pin with the URL, got %q", v.Hint)
+	if !strings.Contains(v.Hint, "--inspect") || !strings.Contains(v.Hint, u.String()) {
+		t.Errorf("hint should suggest --inspect with the URL, got %q", v.Hint)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestTofuSieve_ForcePinOverridesMismatch(t *testing.T) {
 	// pin is covered end-to-end by TestRun_VetModeTOFUPinFlagOverrides.
 	path := tofuTempPath(t)
 	u, _ := url.Parse("https://example.com/install.sh")
-	if err := savePin(path, u.String(), sha256hex("echo old")); err != nil {
+	if err := savePin(path, tofuKey(u), sha256hex("echo old")); err != nil {
 		t.Fatal(err)
 	}
 	s := tofuSieve{path: path, forcePin: true, stderr: io.Discard}
@@ -133,11 +133,12 @@ func TestSavePin_CreatesDirsAndPreservesComments(t *testing.T) {
 	}
 
 	// Hand-add a comment and an unrelated entry, then update b's hash. The
-	// comment and the unrelated pin survive; b's old hash is replaced.
+	// comment and the unrelated pin survive; b's old hash is replaced. Keys are
+	// stored percent-encoded, so seed them that way.
 	seeded := "# user notes\n" +
-		"https://a.example/x  " + sha256hex("a") + "\n" +
+		encodeKey("https://a.example/x") + "  " + sha256hex("a") + "\n" +
 		"\n" +
-		"https://b.example/y  " + sha256hex("b") + "\n"
+		encodeKey("https://b.example/y") + "  " + sha256hex("b") + "\n"
 	if err := os.WriteFile(path, []byte(seeded), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -276,8 +277,270 @@ func TestRun_VetModeTOFUPinFlagOverrides(t *testing.T) {
 	if stdout.String() != "echo second" {
 		t.Errorf("stdout = %q, want %q", stdout.String(), "echo second")
 	}
-	got, _ := loadPin(path, srv.URL)
+	parsedSrvURL, _ := url.Parse(srv.URL)
+	got, _ := loadPin(path, tofuKey(parsedSrvURL))
 	if got != sha256hex("echo second") {
 		t.Errorf("pin not updated to new hash: got %q", got)
+	}
+}
+
+func mustParse(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return u
+}
+
+func TestTofuKey_Canonicalization(t *testing.T) {
+	base := "https://example.com/install.sh"
+	equivalents := []string{
+		"https://Example.COM/install.sh",
+		"https://EXAMPLE.com:443/install.sh",
+		"https://example.com./install.sh",
+		"https://example.com/install.sh#frag",
+		"https://user:pass@example.com/install.sh",
+	}
+	want := tofuKey(mustParse(t, base))
+	for _, e := range equivalents {
+		if got := tofuKey(mustParse(t, e)); got != want {
+			t.Errorf("tofuKey(%q) = %q, want %q (== tofuKey(%q))", e, got, want, base)
+		}
+	}
+
+	distinct := []string{
+		"https://example.com/other.sh",
+		"https://other.com/install.sh",
+		"https://example.com:8443/install.sh",
+		"https://example.com/install.sh?v=2",
+	}
+	for _, d := range distinct {
+		if got := tofuKey(mustParse(t, d)); got == want {
+			t.Errorf("tofuKey(%q) = %q, should differ from base key", d, got)
+		}
+	}
+
+	// Idempotence: re-parsing the canonical form yields the same key.
+	for _, raw := range append(equivalents, distinct...) {
+		k := tofuKey(mustParse(t, raw))
+		if again := tofuKey(mustParse(t, k)); again != k {
+			t.Errorf("tofuKey not idempotent for %q: %q -> %q", raw, k, again)
+		}
+	}
+}
+
+func TestEncodeKey_RoundTrip(t *testing.T) {
+	for _, s := range []string{
+		"https://example.com/x",
+		"https://example.com/has space",
+		"https://example.com/has+plus",
+		"https://example.com/has#hash",
+		"https://example.com/has%percent",
+		"https://example.com/has\ttab",
+	} {
+		enc := encodeKey(s)
+		if len(strings.Fields(enc)) != 1 {
+			t.Errorf("encodeKey(%q) = %q is not a single whitespace-free field", s, enc)
+		}
+		dec, err := decodeKey(enc)
+		if err != nil {
+			t.Fatalf("decodeKey(%q): %v", enc, err)
+		}
+		if dec != s {
+			t.Errorf("round-trip: decodeKey(encodeKey(%q)) = %q", s, dec)
+		}
+	}
+}
+
+// A URL with a literal space in the query would, under the old whitespace-split
+// format, produce a 3+ field line that never matched on read (re-pinning every
+// fetch) and never replaced on write (unbounded growth). Percent-encoding the
+// key fixes both.
+func TestTofuSieve_SpaceInQueryPinsAndMatches(t *testing.T) {
+	path := tofuTempPath(t)
+	u := mustParse(t, "https://example.com/x?q=a b")
+	if !strings.Contains(u.String(), " ") {
+		t.Fatalf("precondition: expected a raw space in %q", u.String())
+	}
+	s := tofuSieve{path: path, stderr: io.Discard}
+	if v := s.Evaluate([]byte("body"), SieveMeta{URL: u}); v.Block {
+		t.Fatalf("first use blocked: %s", v.Reason)
+	}
+	if v := s.Evaluate([]byte("body"), SieveMeta{URL: u}); v.Block {
+		t.Fatalf("second eval blocked (pin did not round-trip): %s", v.Reason)
+	}
+}
+
+func TestSavePin_NoDuplicateGrowthForSpaceURL(t *testing.T) {
+	path := tofuTempPath(t)
+	key := tofuKey(mustParse(t, "https://example.com/x?q=a b"))
+	if err := savePin(path, key, sha256hex("first")); err != nil {
+		t.Fatal(err)
+	}
+	if err := savePin(path, key, sha256hex("second")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := encodeKey(key)
+	count := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == want {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly one line for key, got %d:\n%s", count, data)
+	}
+	got, err := loadPin(path, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != sha256hex("second") {
+		t.Errorf("pin = %q, want second hash %q", got, sha256hex("second"))
+	}
+}
+
+// Pin under one spelling, then re-evaluate under an equivalent spelling: the
+// canonical key means a same body hits the pin and a changed body still blocks.
+func TestTofuSieve_CanonicalKeyAcrossSpellings(t *testing.T) {
+	cases := []struct {
+		name      string
+		body      string
+		wantBlock bool
+	}{
+		{"same body hits pin", "body", false},
+		{"changed body blocks", "other", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := tofuTempPath(t)
+			orig := mustParse(t, "https://example.com/x")
+			s := tofuSieve{path: path, stderr: io.Discard}
+			if v := s.Evaluate([]byte("body"), SieveMeta{URL: orig}); v.Block {
+				t.Fatalf("first use blocked: %s", v.Reason)
+			}
+			equiv := mustParse(t, "https://EXAMPLE.com:443/x")
+			s2 := tofuSieve{path: path, stderr: io.Discard}
+			if v := s2.Evaluate([]byte(c.body), SieveMeta{URL: equiv}); v.Block != c.wantBlock {
+				t.Errorf("block = %v, want %v (reason: %s)", v.Block, c.wantBlock, v.Reason)
+			}
+		})
+	}
+}
+
+func TestTofuSieve_UnreadablePinFileBlocks(t *testing.T) {
+	// A directory at the pin path makes os.Open fail with a non-IsNotExist
+	// error regardless of privilege: the sieve must fail closed.
+	dir := filepath.Join(t.TempDir(), "known.txt")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := tofuSieve{path: dir, stderr: io.Discard}
+	v := s.Evaluate([]byte("body"), SieveMeta{URL: mustParse(t, "https://example.com/x")})
+	if !v.Block {
+		t.Fatal("expected fail-closed block on unreadable pin file")
+	}
+	if !strings.Contains(v.Reason, "cannot read") || !strings.Contains(v.Reason, dir) {
+		t.Errorf("reason = %q, want 'cannot read' and the path", v.Reason)
+	}
+}
+
+func TestRun_VetModeBlocksOnUnreadablePin(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "echo hi")
+	}))
+	defer srv.Close()
+
+	dir := filepath.Join(t.TempDir(), "known.txt")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	cfg := config{forcedMode: modeVet, stdout: &stdout, stderr: io.Discard, tofuPath: dir}
+	err := run(srv.Client(), cfg, srv.URL)
+	if err == nil {
+		t.Fatal("expected error from unreadable pin file in vet mode")
+	}
+	if !strings.Contains(err.Error(), "tofu") {
+		t.Errorf("expected tofu in error, got %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout should be empty on block, got %q", stdout.String())
+	}
+}
+
+// With --pin, the sieve always re-pins and passes; the stderr notice differs by
+// whether this is a first pin, an unchanged hash, or a genuine change.
+func TestTofuSieve_ForcePinMessaging(t *testing.T) {
+	cases := []struct {
+		name         string
+		prepin       string // body whose hash is pinned beforehand; "" = no prior pin
+		body         string
+		wantContains []string
+		wantAbsent   []string
+	}{
+		{"first use", "", "body", []string{"pinning"}, []string{"->"}},
+		{"unchanged", "body", "body", nil, []string{"->", "re-pinning"}},
+		{"changed", "old", "new", []string{short(sha256hex("old")), short(sha256hex("new")), "re-pin"}, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := tofuTempPath(t)
+			u := mustParse(t, "https://example.com/x")
+			if c.prepin != "" {
+				if err := savePin(path, tofuKey(u), sha256hex(c.prepin)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var stderr bytes.Buffer
+			s := tofuSieve{path: path, forcePin: true, stderr: &stderr}
+			if v := s.Evaluate([]byte(c.body), SieveMeta{URL: u}); v.Block {
+				t.Fatalf("forcePin should pass, got block: %s", v.Reason)
+			}
+			out := stderr.String()
+			for _, w := range c.wantContains {
+				if !strings.Contains(out, w) {
+					t.Errorf("stderr %q missing %q", out, w)
+				}
+			}
+			for _, w := range c.wantAbsent {
+				if strings.Contains(out, w) {
+					t.Errorf("stderr %q should not contain %q", out, w)
+				}
+			}
+			got, err := loadPin(path, tofuKey(u))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != sha256hex(c.body) {
+				t.Errorf("pin = %q, want %q (forcePin always writes current)", got, sha256hex(c.body))
+			}
+		})
+	}
+}
+
+func TestSavePin_RemovesTempOnRenameFailure(t *testing.T) {
+	// Make the final path component an existing directory so os.Rename fails;
+	// the temp file must not be left behind.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "known.txt")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := savePin(path, "https://example.com/x", sha256hex("body")); err == nil {
+		t.Fatal("expected savePin to fail when target is a directory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".known.tmp-") {
+			t.Errorf("leftover temp file: %s", e.Name())
+		}
 	}
 }
