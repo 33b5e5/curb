@@ -41,8 +41,9 @@ With `gh` installed and run from inside the repo:
 - `gh issue list --label enhancement` filters to feature requests.
 - `gh issue view <number>` shows full detail, including the design rationale captured at filing time.
 
-When picking up an issue, reference its number in commit messages and PR descriptions so the history stays linked back
-to its motivation.
+When picking up an issue, reference its number in the PR description (e.g. a `Closes #N` line) so GitHub links and
+autocloses it on merge. Keep issue numbers out of commit messages themselves, so the commit history stays portable if
+the project ever moves off GitHub.
 
 ## Style
 
