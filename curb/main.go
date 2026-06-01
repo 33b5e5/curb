@@ -304,9 +304,23 @@ func run(client *http.Client, cfg config, raw string) error {
 		return fmt.Errorf("HTTP %s", resp.Status)
 	}
 
-	m, body, err := resolveMode(cfg.forcedMode, resp)
+	m, rc, err := resolveMode(cfg.forcedMode, resp)
 	if err != nil {
 		return err
+	}
+	// resp.Body is closed via the deferred Close above; downstream only reads, so
+	// an io.Reader is all the consumers need.
+	var body io.Reader = rc
+	// Nudge toward --vet when a shell-shaped body is streaming to a pipe. Gated
+	// to the cases where the body actually goes to stdout: not vet (which is the
+	// thing we'd be suggesting), no -o (that writes a file), and stdout not a TTY
+	// (a human reading it isn't piping to sh). Stateless and advisory; the body
+	// is unchanged. See issue #4.
+	if m != modeVet && cfg.outPath == "" && !cfg.stdoutIsTTY {
+		var shaped bool
+		if shaped, body = looksShellShaped(body, resp.Header.Get("Content-Type")); shaped {
+			fmt.Fprintln(cfg.stderr, shellHint)
+		}
 	}
 	switch m {
 	case modeInspect:

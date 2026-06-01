@@ -62,6 +62,54 @@ func isTextual(mt string) bool {
 	return false
 }
 
+// shellHint is the one-line stderr nudge emitted when a shell-shaped body is
+// streamed to a pipe without --vet. It is advisory only: the body still streams
+// unchanged. See issue #4 for the design rationale (hint, never auto-vet).
+const shellHint = "curb: looks like a shell script piped to another process; consider --vet to validate before piping"
+
+// shellContentTypes are the media types that mark a body as a shell script by
+// declaration, before we fall back to sniffing for a shebang.
+var shellContentTypes = map[string]bool{
+	"text/x-shellscript":        true,
+	"application/x-sh":          true,
+	"application/x-shellscript": true,
+}
+
+// shebangPeek is how many leading bytes we read to look for a shell shebang;
+// comfortably covers "#!/usr/bin/env bash" and similar.
+const shebangPeek = 64
+
+// looksShellShaped reports whether body looks like a shell script, by
+// Content-Type or by a shell shebang on the first line. It only knows "this is
+// the shape of thing that often gets piped to sh," not that anything is. To
+// check the shebang it may read the first few bytes of body, so it returns a
+// reader that replays them; callers must use the returned reader, not the
+// original.
+func looksShellShaped(body io.Reader, ct string) (bool, io.Reader) {
+	if mt, _, _ := mime.ParseMediaType(ct); shellContentTypes[mt] {
+		return true, body
+	}
+	peek := make([]byte, shebangPeek)
+	n, _ := io.ReadFull(body, peek)
+	peek = peek[:n]
+	rewound := io.MultiReader(bytes.NewReader(peek), body)
+	return hasShellShebang(peek), rewound
+}
+
+// hasShellShebang reports whether b begins with a "#!" interpreter line that
+// names a shell. The substring "sh" on the shebang line covers sh, bash, dash,
+// zsh, ksh, and friends without enumerating them.
+func hasShellShebang(b []byte) bool {
+	if !bytes.HasPrefix(b, []byte("#!")) {
+		return false
+	}
+	line := b
+	if i := bytes.IndexByte(b, '\n'); i >= 0 {
+		line = b[:i]
+	}
+	return bytes.Contains(line, []byte("sh"))
+}
+
 func download(body io.Reader, resp *http.Response, u *url.URL, cfg config) error {
 	if cfg.outPath != "" {
 		return saveTo(body, cfg.outPath, resp.ContentLength, true, cfg)
