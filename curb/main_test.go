@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -581,6 +582,40 @@ func TestSafeBasename(t *testing.T) {
 		if err == nil && got != c.want {
 			t.Errorf("%q: got=%q want=%q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestDeriveFilename(t *testing.T) {
+	cases := []struct {
+		name    string
+		cd      string // Content-Disposition header; "" omits it
+		rawURL  string
+		want    string
+		wantErr bool
+	}{
+		{"content-disposition wins over the URL", `attachment; filename="pkg.tar.gz"`, "https://x.example/ignored", "pkg.tar.gz", false},
+		{"falls back to the URL path", "", "https://x.example/dl/app.bin", "app.bin", false},
+		{"root path has no usable name", "", "https://x.example/", "", true},
+		{"bare host has no usable name", "", "https://x.example", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp := &http.Response{Header: http.Header{}}
+			if c.cd != "" {
+				resp.Header.Set("Content-Disposition", c.cd)
+			}
+			u, err := url.Parse(c.rawURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := deriveFilename(resp, u)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, c.wantErr)
+			}
+			if err == nil && got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 
