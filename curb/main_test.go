@@ -118,7 +118,10 @@ func TestRun_DownloadsBinaryWithOutFlag(t *testing.T) {
 }
 
 func TestRun_StreamsBinaryOnPipe(t *testing.T) {
-	payload := []byte{0x89, 0x50, 0x4E, 0x47}
+	// Full 8-byte PNG signature so http.DetectContentType returns image/png and
+	// resolveMode picks modeDownload; on a pipe that lands in stream(). The old
+	// 4-byte body sniffed as text/plain and silently took the inspect path.
+	payload := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write(payload)
@@ -132,6 +135,33 @@ func TestRun_StreamsBinaryOnPipe(t *testing.T) {
 	}
 	if !bytes.Equal(buf.Bytes(), payload) {
 		t.Errorf("stdout = %x, want %x", buf.Bytes(), payload)
+	}
+}
+
+func TestRun_StreamSummaryGoesToStderr(t *testing.T) {
+	// Force modeDownload on a pipe so stream() runs deterministically, then
+	// assert the payload/metrics contract: body to stdout, the byte/duration
+	// summary to stderr (never stdout).
+	payload := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(payload)
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	cfg := config{forcedMode: modeDownload, stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !bytes.Equal(stdout.Bytes(), payload) {
+		t.Errorf("stdout = %x, want only the payload %x", stdout.Bytes(), payload)
+	}
+	if strings.Contains(stdout.String(), "curb:") {
+		t.Errorf("metrics summary leaked into stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "curb:") {
+		t.Errorf("expected byte/duration summary on stderr, got %q", stderr.String())
 	}
 }
 
