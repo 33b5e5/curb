@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,18 +28,31 @@ func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 	if meta.URL == nil {
 		return Verdict{}
 	}
-	key := meta.URL.String()
+	key := tofuKey(meta.URL)
 	sum := sha256.Sum256(body)
 	cur := hex.EncodeToString(sum[:])
 
 	pinned, err := loadPin(t.path, key)
 	if err != nil {
-		t.warn("cannot read %s: %v", t.path, err)
-		return Verdict{}
+		// Fail closed on a genuine read error. loadPin maps a missing file to
+		// ("", nil), so first use still pins; any other error blocks.
+		return Verdict{
+			Block:  true,
+			Reason: fmt.Sprintf("cannot read pin file %s: %v", t.path, err),
+			Hint:   "fix the file's permissions/path, or bypass pinning with --no-pin",
+		}
 	}
 
 	switch {
 	case t.forcePin:
+		switch {
+		case pinned == "":
+			t.warn("pinning %s for %s", short(cur), key)
+		case pinned == cur:
+			// no diff to report
+		default:
+			t.warn("re-pinning %s: %s -> %s", key, short(pinned), short(cur))
+		}
 		if err := savePin(t.path, key, cur); err != nil {
 			t.warn("cannot write %s: %v", t.path, err)
 		}
@@ -47,21 +62,27 @@ func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 			t.warn("cannot write %s: %v", t.path, err)
 			return Verdict{}
 		}
-		t.warn("pinned %s for %s", cur[:12], key)
+		t.warn("pinned %s for %s", short(cur), key)
 		return Verdict{}
 	case pinned == cur:
 		return Verdict{}
 	default:
-		hint := "if the change is expected, accept the new hash with --pin"
-		if meta.URL != nil {
-			hint = fmt.Sprintf("if expected: curb --pin --vet %s", meta.URL)
-		}
+		hint := fmt.Sprintf("inspect the new body first: curb --inspect %[1]s; if the change is expected, re-pin with: curb --pin --vet %[1]s", meta.URL)
 		return Verdict{
 			Block:  true,
-			Reason: fmt.Sprintf("body changed (pinned %s, got %s)", pinned[:12], cur[:12]),
+			Reason: fmt.Sprintf("body changed (pinned %s, got %s)", short(pinned), short(cur)),
 			Hint:   hint,
 		}
 	}
+}
+
+// short returns the first 12 characters of a hex sum, or the whole string if it
+// is shorter (the stored value is user-editable, so don't assume a length).
+func short(s string) string {
+	if len(s) < 12 {
+		return s
+	}
+	return s[:12]
 }
 
 func (t tofuSieve) warn(format string, args ...any) {
@@ -71,10 +92,42 @@ func (t tofuSieve) warn(format string, args ...any) {
 	fmt.Fprintf(t.stderr, "curb: tofu: "+format+"\n", args...)
 }
 
+// tofuKey returns the canonical pin key for u. It canonicalizes the URL so that
+// equivalent spellings (case-insensitive host, trailing dot, default :443,
+// fragment, userinfo) share a single pin, then returns its string form.
+//
+// The query string is kept verbatim: a different query is a different resource,
+// and we do not reorder parameters. Internationalized hosts are not folded to a
+// single normal form (no punycode/IDN normalization); distinct spellings of the
+// same IDN host therefore pin separately.
+func tofuKey(u *url.URL) string {
+	host := strings.ToLower(u.Hostname())
+	host = strings.TrimSuffix(host, ".")
+	port := u.Port()
+	if port != "" && port != "443" {
+		host = net.JoinHostPort(host, port)
+	}
+	c := url.URL{
+		Scheme:   u.Scheme,
+		Host:     host,
+		Path:     u.Path,
+		RawQuery: u.RawQuery,
+	}
+	return c.String()
+}
+
+// encodeKey percent-encodes a pin key so it is a single whitespace-free token on
+// disk, surviving the strings.Fields parse regardless of spaces in the URL.
+func encodeKey(s string) string { return url.QueryEscape(s) }
+
+// decodeKey reverses encodeKey.
+func decodeKey(s string) (string, error) { return url.QueryUnescape(s) }
+
 // loadPin returns the pinned hex SHA-256 for url, or "" if the file is missing
-// or the URL isn't recorded. File format: one entry per line, "<url> <hex>",
-// with '#' comments and blank lines ignored.
+// or the URL isn't recorded. File format: one entry per line,
+// "<percent-encoded-url> <hex>", with '#' comments and blank lines ignored.
 func loadPin(path, url string) (string, error) {
+	want := encodeKey(url)
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -93,20 +146,24 @@ func loadPin(path, url string) (string, error) {
 		if len(parts) != 2 {
 			continue
 		}
-		if parts[0] == url {
+		if parts[0] == want {
 			return parts[1], nil
 		}
 	}
 	return "", sc.Err()
 }
 
-// savePin inserts or updates the pin for url. Writes are atomic via temp file
-// + rename within the same directory.
+// savePin inserts or updates the pin for url. The on-disk key is
+// percent-encoded ("<percent-encoded-url> <hex>"). Writes are atomic via temp
+// file + rename within the same directory.
 func savePin(path, url, hexsum string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+
+	want := encodeKey(url)
+	entry := want + " " + hexsum
 
 	var lines []string
 	replaced := false
@@ -117,8 +174,8 @@ func savePin(path, url, hexsum string) error {
 			trimmed := strings.TrimSpace(line)
 			if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
 				parts := strings.Fields(trimmed)
-				if len(parts) == 2 && parts[0] == url {
-					lines = append(lines, url+" "+hexsum)
+				if len(parts) == 2 && parts[0] == want {
+					lines = append(lines, entry)
 					replaced = true
 					continue
 				}
@@ -133,7 +190,7 @@ func savePin(path, url, hexsum string) error {
 		return err
 	}
 	if !replaced {
-		lines = append(lines, url+" "+hexsum)
+		lines = append(lines, entry)
 	}
 
 	tmp, err := os.CreateTemp(dir, ".known.tmp-*")
@@ -157,7 +214,11 @@ func savePin(path, url, hexsum string) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return nil
 }
 
 // defaultTofuPath resolves the pin-file location: $XDG_CONFIG_HOME/curb/known.txt,
