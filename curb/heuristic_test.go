@@ -41,6 +41,7 @@ func TestHeuristicSieve_FlagsDangerousPatterns(t *testing.T) {
 
 func TestHeuristicSieve_PassesBenignBodies(t *testing.T) {
 	bodies := []string{
+		"",            // empty body (e.g. HTTP 204) has nothing to flag
 		"echo hello\n",
 		"#!/usr/bin/env bash\nset -euo pipefail\necho install complete\n",
 		"rm -rf /tmp/build\n",          // root prefix, not root itself
@@ -68,12 +69,5 @@ func TestHeuristicSieve_ReportsMultipleHits(t *testing.T) {
 		if !strings.Contains(v.Reason, want) {
 			t.Errorf("reason %q missing %q", v.Reason, want)
 		}
-	}
-}
-
-func TestHeuristicSieve_EmptyBodyPasses(t *testing.T) {
-	v := heuristicSieve{}.Evaluate(nil, SieveMeta{})
-	if v.Block {
-		t.Errorf("empty body should pass heuristic, got: %s", v.Reason)
 	}
 }

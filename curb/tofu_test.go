@@ -79,19 +79,16 @@ func TestTofuSieve_MismatchBlocks(t *testing.T) {
 }
 
 func TestTofuSieve_ForcePinOverridesMismatch(t *testing.T) {
+	// Unit-level: forcePin turns a mismatch into a pass. That it also rewrites the
+	// pin is covered end-to-end by TestRun_VetModeTOFUPinFlagOverrides.
 	path := tofuTempPath(t)
 	u, _ := url.Parse("https://example.com/install.sh")
 	if err := savePin(path, u.String(), sha256hex("echo old")); err != nil {
 		t.Fatal(err)
 	}
 	s := tofuSieve{path: path, forcePin: true, stderr: io.Discard}
-	v := s.Evaluate([]byte("echo new"), SieveMeta{URL: u})
-	if v.Block {
-		t.Fatalf("expected pass with --pin, got block: %s", v.Reason)
-	}
-	got, _ := loadPin(path, u.String())
-	if got != sha256hex("echo new") {
-		t.Errorf("pin not updated: got %q, want %q", got, sha256hex("echo new"))
+	if v := s.Evaluate([]byte("echo new"), SieveMeta{URL: u}); v.Block {
+		t.Fatalf("expected pass with --pin despite mismatch, got block: %s", v.Reason)
 	}
 }
 
@@ -124,16 +121,26 @@ func TestTofuSieve_MissingURLIsNoOp(t *testing.T) {
 	}
 }
 
-func TestSavePin_AtomicAndPreservesComments(t *testing.T) {
-	path := tofuTempPath(t)
-	initial := "# user notes\n" +
+func TestSavePin_CreatesDirsAndPreservesComments(t *testing.T) {
+	// First pin lands in a directory that does not exist yet: savePin must create
+	// the parents.
+	path := filepath.Join(t.TempDir(), "nested", "dir", "known.txt")
+	if err := savePin(path, "https://b.example/y", sha256hex("b")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected pin file (and parent dirs) to be created: %v", err)
+	}
+
+	// Hand-add a comment and an unrelated entry, then update b's hash. The
+	// comment and the unrelated pin survive; b's old hash is replaced.
+	seeded := "# user notes\n" +
 		"https://a.example/x  " + sha256hex("a") + "\n" +
 		"\n" +
 		"https://b.example/y  " + sha256hex("b") + "\n"
-	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(seeded), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Update b's hash.
 	if err := savePin(path, "https://b.example/y", sha256hex("b2")); err != nil {
 		t.Fatal(err)
 	}
@@ -141,27 +148,13 @@ func TestSavePin_AtomicAndPreservesComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), "# user notes") {
-		t.Errorf("comment lost: %s", got)
-	}
-	if !strings.Contains(string(got), sha256hex("a")) {
-		t.Errorf("unrelated entry lost: %s", got)
-	}
-	if !strings.Contains(string(got), sha256hex("b2")) {
-		t.Errorf("update not applied: %s", got)
+	for _, want := range []string{"# user notes", sha256hex("a"), sha256hex("b2")} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("expected %q preserved/applied, got:\n%s", want, got)
+		}
 	}
 	if strings.Contains(string(got), sha256hex("b")+"\n") {
-		t.Errorf("old hash for b still present: %s", got)
-	}
-}
-
-func TestSavePin_CreatesMissingDirs(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "dir", "known.txt")
-	if err := savePin(path, "https://e.example/s", sha256hex("x")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected pin file to exist: %v", err)
+		t.Errorf("old hash for b still present:\n%s", got)
 	}
 }
 
