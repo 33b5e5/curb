@@ -360,6 +360,148 @@ func TestRun_SniffsWhenContentTypeMissing(t *testing.T) {
 	}
 }
 
+func TestRun_HintsOnShellShebangPipe(t *testing.T) {
+	body := "#!/bin/sh\necho hi\n"
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "consider --vet") {
+		t.Errorf("expected shell-pipe hint on stderr, got %q", stderr.String())
+	}
+	// Peeking for the shebang must not eat any of the streamed body.
+	if stdout.String() != body {
+		t.Errorf("stdout = %q, want full body %q", stdout.String(), body)
+	}
+}
+
+func TestRun_HintsOnShellContentType(t *testing.T) {
+	body := "install everything\n" // no shebang; the Content-Type alone qualifies
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-shellscript")
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "consider --vet") {
+		t.Errorf("expected hint on stderr, got %q", stderr.String())
+	}
+	if stdout.String() != body {
+		t.Errorf("stdout = %q, want %q", stdout.String(), body)
+	}
+}
+
+func TestRun_NoHintOnTTY(t *testing.T) {
+	// A shell script displayed to a human (stdout is a TTY) is not being piped,
+	// so no hint even though the body is shell-shaped.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, "#!/bin/sh\necho hi\n")
+	}))
+	defer srv.Close()
+
+	var stderr bytes.Buffer
+	cfg := config{stdout: io.Discard, stderr: &stderr, stdoutIsTTY: true}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(stderr.String(), "consider --vet") {
+		t.Errorf("did not expect hint when stdout is a TTY, got %q", stderr.String())
+	}
+}
+
+func TestRun_NoHintInVetMode(t *testing.T) {
+	// --vet was passed, so suggesting --vet would be noise.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/x-shellscript")
+		io.WriteString(w, "#!/bin/sh\necho hi\n")
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	cfg := config{forcedMode: modeVet, stdout: &stdout, stderr: &stderr, stdoutIsTTY: false, noPin: true}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(stderr.String(), "consider --vet") {
+		t.Errorf("did not expect hint in vet mode, got %q", stderr.String())
+	}
+}
+
+func TestRun_NoHintForNonShellBody(t *testing.T) {
+	body := `{"ok":true}`
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: &stderr, stdoutIsTTY: false}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(stderr.String(), "consider --vet") {
+		t.Errorf("did not expect hint for JSON body, got %q", stderr.String())
+	}
+	if stdout.String() != body {
+		t.Errorf("stdout = %q, want %q", stdout.String(), body)
+	}
+}
+
+func TestRun_NoHintWhenSavingToFile(t *testing.T) {
+	// -o sends the body to a file, not down a pipe, so the hint should stay quiet
+	// even though stdout is not a TTY.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/x-shellscript")
+		io.WriteString(w, "#!/bin/sh\necho hi\n")
+	}))
+	defer srv.Close()
+
+	dst := filepath.Join(t.TempDir(), "script.sh")
+	var stderr bytes.Buffer
+	cfg := config{outPath: dst, forcedMode: modeDownload, stdout: io.Discard, stderr: &stderr, stdoutIsTTY: false}
+	if err := run(srv.Client(), cfg, srv.URL); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(stderr.String(), "consider --vet") {
+		t.Errorf("did not expect hint when saving with -o, got %q", stderr.String())
+	}
+}
+
+func TestHasShellShebang(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"#!/bin/sh\necho hi", true},
+		{"#!/usr/bin/env bash\n", true},
+		{"#! /bin/sh", true},
+		{"#!/usr/bin/env zsh\nx", true},
+		{"#!/usr/bin/python3\nprint()", false}, // shebang, but not a shell
+		{"echo hi\n", false},
+		{"", false},
+		{"#", false},
+	}
+	for _, c := range cases {
+		if got := hasShellShebang([]byte(c.in)); got != c.want {
+			t.Errorf("hasShellShebang(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 func TestSelectMode(t *testing.T) {
 	cases := []struct {
 		name     string
