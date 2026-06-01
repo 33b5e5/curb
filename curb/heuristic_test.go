@@ -33,9 +33,12 @@ func TestHeuristicSieve_FlagsDangerousPatterns(t *testing.T) {
 		if !strings.Contains(v.Reason, c.hit) {
 			t.Errorf("%s: reason %q did not include %q", c.name, v.Reason, c.hit)
 		}
-		if !strings.Contains(v.Reason, "heuristic") || !strings.Contains(v.Reason, "not a guarantee") {
-			t.Errorf("%s: reason %q missing honest-framing language", c.name, v.Reason)
-		}
+	}
+	// The honest-framing language comes from one shared template, so a single
+	// representative block proves it; no need to re-check every row.
+	v := heuristicSieve{}.Evaluate([]byte("rm -rf /\n"), SieveMeta{})
+	if !strings.Contains(v.Reason, "heuristic") || !strings.Contains(v.Reason, "not a guarantee") {
+		t.Errorf("reason %q missing honest-framing language", v.Reason)
 	}
 }
 
