@@ -124,30 +124,48 @@ func download(body io.Reader, resp *http.Response, u *url.URL, cfg config) error
 	return saveTo(body, name, resp.ContentLength, false, cfg)
 }
 
+// saveTo writes body to dst via a temp file in the same directory, renaming
+// into place only after a clean copy. A failed transfer therefore leaves dst
+// untouched: no truncated artifact, and any pre-existing file survives until
+// the new one is complete. This mirrors the temp-file + rename in savePin.
 func saveTo(body io.Reader, dst string, total int64, allowOverwrite bool, cfg config) error {
-	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	if !allowOverwrite {
-		flags = os.O_WRONLY | os.O_CREATE | os.O_EXCL
-	}
-	f, err := os.OpenFile(dst, flags, 0o644)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
+		// O_EXCL on the final path used to enforce this atomically; with the
+		// temp-file approach we check up front and rely on the small race
+		// window being benign for a single-user fetch.
+		if _, err := os.Stat(dst); err == nil {
 			return fmt.Errorf("%s already exists; pass -o PATH to overwrite", dst)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".curb.tmp-*")
+	if err != nil {
 		return err
 	}
+	// Remove the temp file on every failure path; a successful rename makes
+	// this a harmless no-op.
+	defer os.Remove(tmp.Name())
+
 	start := time.Now()
 	src, bar := withProgress(body, "curb: downloading "+dst, total, cfg)
-	n, copyErr := io.Copy(f, src)
+	n, copyErr := io.Copy(tmp, src)
 	if bar != nil {
 		bar.finish()
 	}
-	closeErr := f.Close()
+	closeErr := tmp.Close()
 	if copyErr != nil {
 		return copyErr
 	}
 	if closeErr != nil {
 		return closeErr
+	}
+	// CreateTemp makes the file 0600; match the 0644 the direct open used.
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), dst); err != nil {
+		return err
 	}
 	fmt.Fprintf(cfg.stderr, "curb: saved %s (%s in %s)\n", dst, humanBytes(n), time.Since(start).Round(time.Millisecond))
 	return nil

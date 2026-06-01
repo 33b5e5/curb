@@ -235,6 +235,68 @@ func TestRun_OutFlagOverwrites(t *testing.T) {
 	}
 }
 
+// failingReader yields data once, then fails, to simulate a transfer that
+// drops partway through.
+type failingReader struct {
+	data []byte
+	done bool
+}
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.ErrUnexpectedEOF
+	}
+	r.done = true
+	n := copy(p, r.data)
+	return n, nil
+}
+
+func TestSaveTo_FailedCopyLeavesNoPartial(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "out.bin")
+	cfg := config{stdout: io.Discard, stderr: io.Discard}
+	err := saveTo(&failingReader{data: []byte("half a payload")}, dst, -1, true, cfg)
+	if err == nil {
+		t.Fatal("expected copy error, got nil")
+	}
+	if _, statErr := os.Stat(dst); !os.IsNotExist(statErr) {
+		t.Errorf("partial file left at %s (stat err = %v)", dst, statErr)
+	}
+}
+
+func TestSaveTo_FailedCopyPreservesExistingFile(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "good.bin")
+	if err := os.WriteFile(dst, []byte("previously good"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{stdout: io.Discard, stderr: io.Discard}
+	err := saveTo(&failingReader{data: []byte("corrupt")}, dst, -1, true, cfg)
+	if err == nil {
+		t.Fatal("expected copy error, got nil")
+	}
+	got, _ := os.ReadFile(dst)
+	if string(got) != "previously good" {
+		t.Errorf("existing file clobbered by failed download: %q", got)
+	}
+}
+
+func TestSaveTo_LeavesNoTempFileOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "out.bin")
+	cfg := config{stdout: io.Discard, stderr: io.Discard}
+	if err := saveTo(strings.NewReader("payload"), dst, -1, true, cfg); err != nil {
+		t.Fatalf("saveTo: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".curb.tmp-") {
+			t.Errorf("temp file left behind: %s", e.Name())
+		}
+	}
+}
+
 func TestRun_ForcedInspectStreamsBinary(t *testing.T) {
 	body := []byte{0x89, 0x50, 0x4E, 0x47}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
