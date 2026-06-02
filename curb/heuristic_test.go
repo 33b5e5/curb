@@ -44,13 +44,13 @@ func TestHeuristicSieve_FlagsDangerousPatterns(t *testing.T) {
 
 func TestHeuristicSieve_PassesBenignBodies(t *testing.T) {
 	bodies := []string{
-		"",            // empty body (e.g. HTTP 204) has nothing to flag
+		"", // empty body (e.g. HTTP 204) has nothing to flag
 		"echo hello\n",
 		"#!/usr/bin/env bash\nset -euo pipefail\necho install complete\n",
-		"rm -rf /tmp/build\n",          // root prefix, not root itself
-		"rm -rf /home/user/cache\n",    // safe deletion
-		"sudo apt-get install -y foo\n", // sudo for a package manager, no shell
-		"sudo systemctl restart sshd\n", // sudo for systemctl
+		"rm -rf /tmp/build\n",                           // root prefix, not root itself
+		"rm -rf /home/user/cache\n",                     // safe deletion
+		"sudo apt-get install -y foo\n",                 // sudo for a package manager, no shell
+		"sudo systemctl restart sshd\n",                 // sudo for systemctl
 		"curl -fsSL https://x.example/file > out.txt\n", // download, not piped
 		"echo SGVsbG8K | base64 -d > greeting.txt\n",    // base64 decode to file
 	}
