@@ -30,8 +30,8 @@ Three modes, picked automatically from `Content-Type` or by sniffing the first f
 `--vet` runs the body through a chain of checks before any bytes reach a shell:
 
 - **`nonempty`** refuses empty bodies (e.g. HTTP 204) that would otherwise pipe silently.
-- **`heuristic`** pattern smell-tests (`rm -rf /`, fetch-pipe-shell, base64-pipe-shell, `sudo sh -c`). Friction layer,
-  not a guarantee.
+- **`heuristic`** pattern smell-tests (`rm -rf /`, fetch-pipe-shell, base64-pipe-shell, `sudo sh -c`,
+  `eval "$(curl …)"`). Friction layer, not a guarantee.
 - **`tofu`** trust-on-first-use SHA-256 pinning, persisted at `~/.config/curb/known.txt`. `--pin` to accept a change,
   `--no-pin` to skip, `--force` to override any sieve once.
 

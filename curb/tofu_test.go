@@ -104,7 +104,7 @@ func TestTofuSieve_IsolatesByURL(t *testing.T) {
 	if v := s.Evaluate([]byte("B body"), SieveMeta{URL: uB}); v.Block {
 		t.Fatalf("B first use blocked: %s", v.Reason)
 	}
-	// Re-evaluating A with B's body should NOT match — the pins are per-URL.
+	// Re-evaluating A with B's body should NOT match; the pins are per-URL.
 	if v := s.Evaluate([]byte("B body"), SieveMeta{URL: uA}); !v.Block {
 		t.Errorf("expected block: A pinned to A-body but presented B-body")
 	}

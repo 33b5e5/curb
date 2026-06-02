@@ -47,7 +47,7 @@ func (nonemptySieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 	}
 	hint := ""
 	if meta.Status == http.StatusNoContent {
-		hint = "HTTP 204 means no content by design — likely the wrong URL"
+		hint = "HTTP 204 means no content by design, likely the wrong URL"
 	}
 	return Verdict{Block: true, Reason: reason, Hint: hint}
 }
