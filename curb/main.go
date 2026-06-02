@@ -232,12 +232,10 @@ func newClient(network string) *http.Client {
 }
 
 // defaultVetTimeout is the overall request deadline applied in vet mode when the
-// user hasn't set --timeout. vet buffers an attacker-influenceable body (capped
-// by maxVetBytes), so an endless trickle should fail rather than hang. Streaming
-// modes stay uncapped by default so long or open-ended transfers aren't cut off.
-// It is set above the 30s response-header timeout so the body-read phase gets its
-// own headroom, and kept generous since the cost of cutting off a slow but valid
-// fetch outweighs making a (Ctrl-C-able, size-capped) hostile trickle wait longer.
+// user hasn't set --timeout, so a body that never finishes arriving fails rather
+// than hangs. Streaming modes stay uncapped by default so long transfers aren't
+// cut off. Sits above the response-header timeout to leave the body-read phase
+// its own headroom.
 const defaultVetTimeout = 60 * time.Second
 
 // resolveTimeout picks the overall request deadline (0 means no deadline). An
@@ -311,11 +309,9 @@ func run(client *http.Client, cfg config, raw string) error {
 	// resp.Body is closed via the deferred Close above; downstream only reads, so
 	// an io.Reader is all the consumers need.
 	var body io.Reader = rc
-	// Nudge toward --vet when a shell-shaped body is streaming to a pipe. Gated
-	// to the cases where the body actually goes to stdout: not vet (which is the
-	// thing we'd be suggesting), no -o (that writes a file), and stdout not a TTY
-	// (a human reading it isn't piping to sh). Stateless and advisory; the body
-	// is unchanged. See issue #4.
+	// Nudge toward --vet when a shell-shaped body is streaming to a pipe: not vet,
+	// no -o, and stdout not a TTY (so the body is actually headed down a pipe).
+	// Advisory only; the body is unchanged. See issue #4.
 	if m != modeVet && cfg.outPath == "" && !cfg.stdoutIsTTY {
 		var shaped bool
 		if shaped, body = looksShellShaped(body, resp.Header.Get("Content-Type")); shaped {
