@@ -31,10 +31,31 @@ func TestRun_StreamsBodyOn2xx(t *testing.T) {
 	}
 }
 
-func TestRun_RejectsNonHTTPS(t *testing.T) {
-	err := run(http.DefaultClient, config{stdout: io.Discard, stderr: io.Discard}, "http://example.com")
-	if err == nil || !strings.Contains(err.Error(), "https") {
-		t.Errorf("expected https-only error, got %v", err)
+func TestRun_RejectsBadURLs(t *testing.T) {
+	// A malformed target URL is a usage error (exit 2), not a runtime failure.
+	cases := []struct {
+		name string
+		url  string
+		want string // substring the error message should contain ("" to skip)
+	}{
+		{"non-https scheme", "http://example.com", "https"},
+		{"unparseable", "://nope", ""},
+		{"empty host", "https://", "host"},
+		{"empty host with path", "https:///path", "host"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := run(http.DefaultClient, config{stdout: io.Discard, stderr: io.Discard}, c.url)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if c.want != "" && !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error %q does not contain %q", err, c.want)
+			}
+			if code := exitCode(err); code != 2 {
+				t.Errorf("exitCode = %d, want 2 (usage)", code)
+			}
+		})
 	}
 }
 
@@ -48,12 +69,9 @@ func TestRun_ErrorsOnNon2xx(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("expected 404 error, got %v", err)
 	}
-}
-
-func TestRun_RejectsUnparseableURL(t *testing.T) {
-	err := run(http.DefaultClient, config{stdout: io.Discard, stderr: io.Discard}, "://nope")
-	if err == nil {
-		t.Errorf("expected parse error, got nil")
+	// A non-2xx response is a runtime failure (exit 1), not a usage error.
+	if code := exitCode(err); code != 1 {
+		t.Errorf("exitCode = %d, want 1 (runtime)", code)
 	}
 }
 

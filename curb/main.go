@@ -133,8 +133,27 @@ func main() {
 	}
 	if err := run(newClient(network), cfg, flag.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, "curb:", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// usageError marks a problem with the invocation itself, such as a malformed
+// target URL, so it maps to the usage exit code rather than the runtime one.
+type usageError struct{ err error }
+
+func (e *usageError) Error() string { return e.err.Error() }
+func (e *usageError) Unwrap() error { return e.err }
+
+func usagef(format string, a ...any) error { return &usageError{fmt.Errorf(format, a...)} }
+
+// exitCode maps an error to its process exit code: 2 for usage problems, 1 for
+// runtime failures.
+func exitCode(err error) int {
+	var ue *usageError
+	if errors.As(err, &ue) {
+		return 2
+	}
+	return 1
 }
 
 func selectMode(inspect, download, vet, hasOut bool) (mode, error) {
@@ -278,10 +297,13 @@ var checkRedirect = func(req *http.Request, via []*http.Request) error {
 func run(client *http.Client, cfg config, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return err
+		return &usageError{err}
 	}
 	if u.Scheme != "https" {
-		return fmt.Errorf("only https:// URLs are supported, got %q", u.Scheme)
+		return usagef("only https:// URLs are supported, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return usagef("URL has no host: %q", raw)
 	}
 	ctx := context.Background()
 	if cfg.timeout > 0 {
