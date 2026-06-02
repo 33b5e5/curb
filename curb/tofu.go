@@ -92,14 +92,10 @@ func (t tofuSieve) warn(format string, args ...any) {
 	fmt.Fprintf(t.stderr, "curb: tofu: "+format+"\n", args...)
 }
 
-// tofuKey returns the canonical pin key for u. It canonicalizes the URL so that
-// equivalent spellings (case-insensitive host, trailing dot, default :443,
-// fragment, userinfo) share a single pin, then returns its string form.
-//
-// The query string is kept verbatim: a different query is a different resource,
-// and we do not reorder parameters. Internationalized hosts are not folded to a
-// single normal form (no punycode/IDN normalization); distinct spellings of the
-// same IDN host therefore pin separately.
+// tofuKey returns the canonical pin key for u: equivalent spellings
+// (case-insensitive host, trailing dot, default :443, fragment, userinfo) share
+// a single pin. The query string is kept verbatim, since a different query is a
+// different resource.
 func tofuKey(u *url.URL) string {
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimSuffix(host, ".")

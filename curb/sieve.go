@@ -59,12 +59,10 @@ type sieveHit struct {
 	v    Verdict
 }
 
-// maxVetBytes caps how much of a response vet will buffer. vet is the only
-// buffering mode, and it targets attacker-influenceable curl|sh URLs, so the
-// cap sits above net/http's transparent gunzip layer: it bounds decompressed
-// bytes regardless of Content-Encoding, which defeats decompression bombs.
-// Shell installers run to tens of KB; 8 MiB is generous headroom. Larger
-// payloads belong in --inspect or --download, which stream rather than buffer.
+// maxVetBytes caps how much of a response vet will buffer. The cap is on the
+// decompressed bytes net/http hands back, so it holds regardless of
+// Content-Encoding. Shell installers run to tens of KB; 8 MiB is generous
+// headroom. Larger payloads belong in --inspect or --download, which stream.
 const maxVetBytes = 8 << 20 // 8 MiB
 
 // vet buffers the body, runs it through sieves, and emits only if all pass.
