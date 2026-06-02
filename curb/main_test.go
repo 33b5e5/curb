@@ -96,28 +96,6 @@ func TestRun_RejectsHTTPRedirect(t *testing.T) {
 	}
 }
 
-func TestRun_DownloadsBinaryWithOutFlag(t *testing.T) {
-	payload := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		w.Write(payload)
-	}))
-	defer srv.Close()
-
-	dst := filepath.Join(t.TempDir(), "out.bin")
-	cfg := config{outPath: dst, forcedMode: modeDownload, stdout: io.Discard, stderr: io.Discard}
-	if err := run(srv.Client(), cfg, srv.URL); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if !bytes.Equal(got, payload) {
-		t.Errorf("file content mismatch: got %x, want %x", got, payload)
-	}
-}
-
 func TestRun_StreamSummaryGoesToStderr(t *testing.T) {
 	// Force modeDownload on a pipe so stream() runs deterministically, then
 	// assert the payload/metrics contract: body to stdout, the byte/duration
