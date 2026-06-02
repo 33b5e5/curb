@@ -72,7 +72,7 @@ func TestProgressBar_ThrottlesUpdates(t *testing.T) {
 	var buf bytes.Buffer
 	bar, advance := newTestBar(&buf, 1000)
 
-	bar.advance(100) // first render — always emits
+	bar.advance(100) // first render, always emits
 	for i := 0; i < 9; i++ {
 		advance(10 * time.Millisecond) // stays strictly under minProgressInterval
 		bar.advance(10)

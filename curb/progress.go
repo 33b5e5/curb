@@ -13,7 +13,7 @@ const minProgressInterval = 100 * time.Millisecond
 
 // progressBar renders single-line download progress to stderr, overwriting
 // itself with \r between updates. Total may be -1 when the server omitted
-// Content-Length (or the body was transparently decompressed) — in that case
+// Content-Length (or the body was transparently decompressed); in that case
 // the bar shows bytes + rate only, with no percent or ETA.
 type progressBar struct {
 	out      io.Writer

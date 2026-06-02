@@ -8,7 +8,7 @@ import (
 
 // printVersion writes module version, VCS commit (when available), and the
 // Go toolchain that built the binary. All info comes from build metadata
-// embedded by the Go toolchain — no external state needed.
+// embedded by the Go toolchain; no external state needed.
 func printVersion(out io.Writer) {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {

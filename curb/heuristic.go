@@ -6,9 +6,8 @@ import (
 	"strings"
 )
 
-// heuristicSieve runs pattern-based smell tests over the body.
-// False positives are expected: this is a friction layer, not a guarantee.
-// The Reason text says so explicitly.
+// heuristicSieve runs pattern-based smell tests over the body. It is a friction
+// layer, not a guarantee.
 type heuristicSieve struct{}
 
 func (heuristicSieve) Name() string { return "heuristic" }
@@ -18,41 +17,49 @@ type heuristicRule struct {
 	pattern *regexp.Regexp
 }
 
+// shellAlt is the interpreter set shared by the pipe-to-shell rules.
+const shellAlt = `(?:bash|sh|zsh|dash|ksh|csh|tcsh|fish)`
+
 // heuristicRules are scanned in order; every match contributes to the verdict.
 var heuristicRules = []heuristicRule{
-	// `rm -rf /` and friends — targeting the filesystem root. Allows -r/-f
-	// reordering. The trailing class ensures `rm -rf /tmp` is NOT flagged:
-	// only literal root, root-with-glob, or root followed by a shell separator.
+	// rm -rf of the filesystem root, allowing -r/-f reordering and root spelled
+	// `/`, `//`, or `/.`. The trailing class keeps subpaths like /tmp clear.
 	{
 		name:    "rm-rf-root",
-		pattern: regexp.MustCompile(`(?m)\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*\s+/(\s|$|\*|;|&|\|)`),
+		pattern: regexp.MustCompile(`(?m)\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*\s+/[/.]*(\s|$|\*|;|&|\|)`),
 	},
-	// curl/wget/fetch piped to a shell on the same line — the
-	// nested-pipe-to-bash shape inside an already-piped-to-bash script.
+	// curl/wget/fetch piped into a shell.
 	{
 		name:    "fetch-pipe-shell",
-		pattern: regexp.MustCompile(`(?m)\b(curl|wget|fetch)\b[^\n]*\|\s*(sudo\s+)?(bash|sh|zsh|dash|ksh)\b`),
+		pattern: regexp.MustCompile(`(?m)\b(curl|wget|fetch)\b[^\n]*\|\s*(sudo\s+)?` + shellAlt + `\b`),
 	},
-	// base64 piped to a shell — the classic obfuscation channel. Flags
-	// independent of `-d`/`--decode` so `base64 | sh` and `base64 -d | sh`
-	// both trip.
+	// base64 piped into a shell, with or without -d/--decode.
 	{
 		name:    "base64-pipe-shell",
-		pattern: regexp.MustCompile(`(?m)\bbase64\b[^\n]*\|\s*(sudo\s+)?(bash|sh|zsh|dash|ksh)\b`),
+		pattern: regexp.MustCompile(`(?m)\bbase64\b[^\n]*\|\s*(sudo\s+)?` + shellAlt + `\b`),
 	},
-	// sudo invoking a shell with `-c` — privileged execution of an inline
-	// string. Plain `sudo apt-get install foo` is not flagged; only the
-	// shape that hides what's being privileged.
+	// sudo running a shell with -c, tolerating options, `--`, and `env` before
+	// the shell name.
 	{
 		name:    "sudo-shell",
-		pattern: regexp.MustCompile(`(?m)\bsudo\s+(bash|sh|zsh|dash|ksh)\s+-c\b`),
+		pattern: regexp.MustCompile(`(?m)\bsudo\s+(?:(?:-{1,2}[a-zA-Z][\w-]*|--|env)\s+)*` + shellAlt + `\s+-c\b`),
+	},
+	// eval of a fetch inside a command substitution, e.g. eval "$(curl ...)".
+	{
+		name:    "eval-fetch",
+		pattern: regexp.MustCompile(`(?m)\beval\b[^\n]*(?:\$\(|` + "`" + `)[^\n]*\b(curl|wget|fetch)\b`),
 	},
 }
 
+// lineContinuation matches a shell backslash-newline join, which we collapse to
+// a space so a pipeline split across lines matches as one logical line.
+var lineContinuation = regexp.MustCompile(`\\\r?\n`)
+
 func (heuristicSieve) Evaluate(body []byte, _ SieveMeta) Verdict {
+	scan := lineContinuation.ReplaceAll(body, []byte(" "))
 	var hits []string
 	for _, r := range heuristicRules {
-		if r.pattern.Match(body) {
+		if r.pattern.Match(scan) {
 			hits = append(hits, r.name)
 		}
 	}
@@ -61,6 +68,6 @@ func (heuristicSieve) Evaluate(body []byte, _ SieveMeta) Verdict {
 	}
 	return Verdict{
 		Block:  true,
-		Reason: fmt.Sprintf("smell test matched %s (heuristic — not a guarantee)", strings.Join(hits, ", ")),
+		Reason: fmt.Sprintf("smell test matched %s (heuristic, not a guarantee)", strings.Join(hits, ", ")),
 	}
 }
