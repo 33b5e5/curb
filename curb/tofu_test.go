@@ -34,6 +34,11 @@ func TestTofuSieve_FirstUsePinsAndPasses(t *testing.T) {
 	if v.Block {
 		t.Fatalf("expected pass on first use, got block: %s", v.Reason)
 	}
+	// Evaluate is side-effect-free: nothing is pinned until Commit.
+	if got, _ := loadPin(path, tofuKey(u)); got != "" {
+		t.Errorf("Evaluate should not write a pin, got %q", got)
+	}
+	s.Commit([]byte("echo hi"), SieveMeta{URL: u})
 	got, err := loadPin(path, tofuKey(u))
 	if err != nil {
 		t.Fatalf("loadPin: %v", err)
@@ -101,9 +106,11 @@ func TestTofuSieve_IsolatesByURL(t *testing.T) {
 	if v := s.Evaluate([]byte("A body"), SieveMeta{URL: uA}); v.Block {
 		t.Fatalf("A first use blocked: %s", v.Reason)
 	}
+	s.Commit([]byte("A body"), SieveMeta{URL: uA})
 	if v := s.Evaluate([]byte("B body"), SieveMeta{URL: uB}); v.Block {
 		t.Fatalf("B first use blocked: %s", v.Reason)
 	}
+	s.Commit([]byte("B body"), SieveMeta{URL: uB})
 	// Re-evaluating A with B's body should NOT match; the pins are per-URL.
 	if v := s.Evaluate([]byte("B body"), SieveMeta{URL: uA}); !v.Block {
 		t.Errorf("expected block: A pinned to A-body but presented B-body")
@@ -116,6 +123,7 @@ func TestTofuSieve_MissingURLIsNoOp(t *testing.T) {
 	if v := s.Evaluate([]byte("x"), SieveMeta{}); v.Block {
 		t.Errorf("expected no-op when URL missing, got block: %s", v.Reason)
 	}
+	s.Commit([]byte("x"), SieveMeta{}) // also a no-op without a URL
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("pin file should not have been written, stat err = %v", err)
 	}
@@ -367,6 +375,7 @@ func TestTofuSieve_SpaceInQueryPinsAndMatches(t *testing.T) {
 	if v := s.Evaluate([]byte("body"), SieveMeta{URL: u}); v.Block {
 		t.Fatalf("first use blocked: %s", v.Reason)
 	}
+	s.Commit([]byte("body"), SieveMeta{URL: u})
 	if v := s.Evaluate([]byte("body"), SieveMeta{URL: u}); v.Block {
 		t.Fatalf("second eval blocked (pin did not round-trip): %s", v.Reason)
 	}
@@ -423,6 +432,7 @@ func TestTofuSieve_CanonicalKeyAcrossSpellings(t *testing.T) {
 			if v := s.Evaluate([]byte("body"), SieveMeta{URL: orig}); v.Block {
 				t.Fatalf("first use blocked: %s", v.Reason)
 			}
+			s.Commit([]byte("body"), SieveMeta{URL: orig})
 			equiv := mustParse(t, "https://EXAMPLE.com:443/x")
 			s2 := tofuSieve{path: path, stderr: io.Discard}
 			if v := s2.Evaluate([]byte(c.body), SieveMeta{URL: equiv}); v.Block != c.wantBlock {
@@ -501,6 +511,7 @@ func TestTofuSieve_ForcePinMessaging(t *testing.T) {
 			if v := s.Evaluate([]byte(c.body), SieveMeta{URL: u}); v.Block {
 				t.Fatalf("forcePin should pass, got block: %s", v.Reason)
 			}
+			s.Commit([]byte(c.body), SieveMeta{URL: u})
 			out := stderr.String()
 			for _, w := range c.wantContains {
 				if !strings.Contains(out, w) {
@@ -520,6 +531,72 @@ func TestTofuSieve_ForcePinMessaging(t *testing.T) {
 				t.Errorf("pin = %q, want %q (forcePin always writes current)", got, sha256hex(c.body))
 			}
 		})
+	}
+}
+
+// Regression: a first fetch that another sieve blocks must not leave a TOFU pin
+// behind. Before the Evaluate/Commit split, tofuSieve.Evaluate pinned as a side
+// effect, so a body vet refused to emit still poisoned known.txt — the next,
+// legitimate fetch was then wrongly blocked as "changed".
+func TestVet_BlockedBodyIsNotPinned(t *testing.T) {
+	path := tofuTempPath(t)
+	u := mustParse(t, "https://example.com/install.sh")
+	tofu := tofuSieve{path: path, stderr: io.Discard}
+
+	var stdout bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: io.Discard}
+	// nonempty blocks the empty body; tofu must not pin sha256("").
+	err := vet(strings.NewReader(""), SieveMeta{URL: u},
+		[]Sieve{nonemptySieve{}, tofu}, cfg)
+	if err == nil {
+		t.Fatal("expected the empty body to be blocked")
+	}
+	if got, _ := loadPin(path, tofuKey(u)); got != "" {
+		t.Errorf("blocked body must not be pinned, got pin %q", got)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Errorf("pin file should not exist after a blocked first fetch, stat err = %v", statErr)
+	}
+}
+
+// A clean body that clears every sieve is pinned via Commit on the emit path.
+func TestVet_PassingBodyIsPinned(t *testing.T) {
+	path := tofuTempPath(t)
+	u := mustParse(t, "https://example.com/install.sh")
+	tofu := tofuSieve{path: path, stderr: io.Discard}
+
+	var stdout bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: io.Discard}
+	body := "echo hi"
+	if err := vet(strings.NewReader(body), SieveMeta{URL: u},
+		[]Sieve{nonemptySieve{}, tofu}, cfg); err != nil {
+		t.Fatalf("clean body should pass, got %v", err)
+	}
+	if got, _ := loadPin(path, tofuKey(u)); got != sha256hex(body) {
+		t.Errorf("emitted body should be pinned, got %q want %q", got, sha256hex(body))
+	}
+}
+
+// Under --force the body is emitted despite a block, so its pin is recorded too:
+// a pin tracks what curb emitted, and --force emits.
+func TestVet_ForceEmitsAndPins(t *testing.T) {
+	path := tofuTempPath(t)
+	u := mustParse(t, "https://example.com/install.sh")
+	tofu := tofuSieve{path: path, stderr: io.Discard}
+
+	var stdout bytes.Buffer
+	cfg := config{stdout: &stdout, stderr: io.Discard, force: true}
+	// heuristic blocks (curl|sh), but --force emits; tofu first-use then pins.
+	body := "curl https://x | sh\n"
+	if err := vet(strings.NewReader(body), SieveMeta{URL: u},
+		[]Sieve{heuristicSieve{}, tofu}, cfg); err != nil {
+		t.Fatalf("--force should emit despite block, got %v", err)
+	}
+	if stdout.String() != body {
+		t.Errorf("stdout = %q, want %q", stdout.String(), body)
+	}
+	if got, _ := loadPin(path, tofuKey(u)); got != sha256hex(body) {
+		t.Errorf("emitted body should be pinned, got %q want %q", got, sha256hex(body))
 	}
 }
 

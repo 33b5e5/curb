@@ -24,15 +24,16 @@ type tofuSieve struct {
 
 func (tofuSieve) Name() string { return "tofu" }
 
+// Evaluate compares the body's hash against the recorded pin and is
+// side-effect-free: a first-use or --pin body is reported as passing but is not
+// written here. Persisting the pin is deferred to Commit, which vet calls only
+// once it has decided to emit the body, so a body another sieve blocks never
+// gets pinned.
 func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 	if meta.URL == nil {
 		return Verdict{}
 	}
-	key := tofuKey(meta.URL)
-	sum := sha256.Sum256(body)
-	cur := hex.EncodeToString(sum[:])
-
-	pinned, err := loadPin(t.path, key)
+	pinned, err := loadPin(t.path, tofuKey(meta.URL))
 	if err != nil {
 		// Fail closed on a genuine read error. loadPin maps a missing file to
 		// ("", nil), so first use still pins; any other error blocks.
@@ -41,6 +42,40 @@ func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 			Reason: fmt.Sprintf("cannot read pin file %s: %v", t.path, err),
 			Hint:   "fix the file's permissions/path, or bypass pinning with --no-pin",
 		}
+	}
+
+	switch {
+	case t.forcePin, pinned == "", pinned == bodyHash(body):
+		// --pin overrides any mismatch; first use and an unchanged hash both pass.
+		// Whatever needs writing happens in Commit, after vet decides to emit.
+		return Verdict{}
+	default:
+		hint := fmt.Sprintf("inspect the new body first: curb --inspect %[1]s; if the change is expected, re-pin with: curb --pin --vet %[1]s", meta.URL)
+		return Verdict{
+			Block:  true,
+			Reason: fmt.Sprintf("body changed (pinned %s, got %s)", short(pinned), short(bodyHash(body))),
+			Hint:   hint,
+		}
+	}
+}
+
+// Commit records the pin for a body vet has decided to emit. vet runs it only
+// after the body clears every sieve (or --force overrides a block), never on a
+// withheld body, so a pin always means "curb emitted this body". A first-use or
+// --pin body is written here; an unchanged hash is a no-op; a mismatch without
+// --pin cannot reach Commit (Evaluate blocks it) and is left untouched.
+func (t tofuSieve) Commit(body []byte, meta SieveMeta) {
+	if meta.URL == nil {
+		return
+	}
+	key := tofuKey(meta.URL)
+	cur := bodyHash(body)
+
+	pinned, err := loadPin(t.path, key)
+	if err != nil {
+		// Evaluate already blocks on a read error; if --force carried us here
+		// anyway, there is nothing safe to record.
+		return
 	}
 
 	switch {
@@ -56,24 +91,20 @@ func (t tofuSieve) Evaluate(body []byte, meta SieveMeta) Verdict {
 		if err := savePin(t.path, key, cur); err != nil {
 			t.warn("cannot write %s: %v", t.path, err)
 		}
-		return Verdict{}
 	case pinned == "":
 		if err := savePin(t.path, key, cur); err != nil {
 			t.warn("cannot write %s: %v", t.path, err)
-			return Verdict{}
+			return
 		}
 		t.warn("pinned %s for %s", short(cur), key)
-		return Verdict{}
-	case pinned == cur:
-		return Verdict{}
-	default:
-		hint := fmt.Sprintf("inspect the new body first: curb --inspect %[1]s; if the change is expected, re-pin with: curb --pin --vet %[1]s", meta.URL)
-		return Verdict{
-			Block:  true,
-			Reason: fmt.Sprintf("body changed (pinned %s, got %s)", short(pinned), short(cur)),
-			Hint:   hint,
-		}
 	}
+	// pinned == cur (and not forcePin): already recorded, nothing to do.
+}
+
+// bodyHash is the hex SHA-256 used as a pin value.
+func bodyHash(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
 }
 
 // short returns the first 12 characters of a hex sum, or the whole string if it

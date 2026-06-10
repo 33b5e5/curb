@@ -193,8 +193,10 @@ func validateVetFlags(pin, noPin, force bool, forced mode) error {
 	return nil
 }
 
-// buildSieves assembles the vet-mode sieve chain. Order matters: cheaper
-// checks run first so we don't hash an empty body, etc.
+// buildSieves assembles the vet-mode sieve chain in report order: the cheap
+// content checks (nonempty, heuristic) first, then tofu. tofu records its pin in
+// Commit, which vet runs only after the whole chain passes, so a body the cheap
+// checks block is never pinned.
 func buildSieves(cfg config) ([]Sieve, error) {
 	sieves := []Sieve{nonemptySieve{}, heuristicSieve{}}
 	if cfg.noPin {

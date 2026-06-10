@@ -16,6 +16,25 @@ type Sieve interface {
 	Evaluate(body []byte, meta SieveMeta) Verdict
 }
 
+// Committer is an optional capability a Sieve may implement to persist state
+// tied to a body — but only one vet has decided to emit. vet calls Commit after
+// the body clears every sieve (or --force overrides a block), never on a body a
+// block withholds, so durable side effects (e.g. TOFU pinning) never record a
+// body the user did not receive.
+type Committer interface {
+	Commit(body []byte, meta SieveMeta)
+}
+
+// commitSieves runs the Commit hook of every sieve that has one. Called only on
+// vet's emit paths.
+func commitSieves(sieves []Sieve, body []byte, meta SieveMeta) {
+	for _, s := range sieves {
+		if c, ok := s.(Committer); ok {
+			c.Commit(body, meta)
+		}
+	}
+}
+
 // SieveMeta carries response context that sieves may use to produce
 // diagnostic reasons or hints.
 type SieveMeta struct {
@@ -85,11 +104,13 @@ func vet(body io.Reader, meta SieveMeta, sieves []Sieve, cfg config) error {
 		}
 	}
 	if len(hits) == 0 {
+		commitSieves(sieves, buf, meta)
 		_, err := cfg.stdout.Write(buf)
 		return err
 	}
 	if cfg.force {
 		fmt.Fprintf(cfg.stderr, "curb: %s\n", formatHits(hits, meta.URL, true))
+		commitSieves(sieves, buf, meta)
 		_, err := cfg.stdout.Write(buf)
 		return err
 	}
