@@ -27,9 +27,14 @@ homebrew_casks:
       name: homebrew-tap
     homepage: "https://gocurb.dev"
     description: "Modern HTTPS-only alternative to curl and wget"
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/curb"]
-          end
+    # Homebrew deprecated the raw-Ruby `postflight` stanza that goreleaser's
+    # `hooks.post.install` emits, so write the declarative `postflight_steps`
+    # stanza ourselves until goreleaser ships native support
+    # (https://github.com/goreleaser/goreleaser/pull/6873). goreleaser runs the
+    # rendered cask through Go templates, hence the escaped Homebrew token.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/curb"]
+        end
+      end
