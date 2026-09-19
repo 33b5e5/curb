@@ -86,4 +86,3 @@ In a new repo you might want to add a symlink like:
 `ln -s AGENTS.md CLAUDE.md`
 
 We used AGENTS.md to be agnostic as to the tool used, but CLAUDE.md if present is not tracked in Git.
-
