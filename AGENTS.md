@@ -78,11 +78,3 @@ browser level is already provided by the `.dev` TLD preload list.
 
 This file is the source of truth for project direction and conventions; GitHub issues track planned work (see *Roadmap
 and issue tracking* above).
-
-## Claude
-
-In a new repo you might want to add a symlink like:
-
-`ln -s AGENTS.md CLAUDE.md`
-
-We used AGENTS.md to be agnostic as to the tool used, but CLAUDE.md if present is not tracked in Git.
